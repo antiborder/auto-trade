@@ -1,0 +1,29 @@
+{
+  "agents": [
+    {
+      "id": "simple_ma_agent_1",
+      "type": "SimpleMA",
+      "trader_id": "rest_trader_1",
+      "short_window": 5,
+      "long_window": 20
+    },
+    {
+      "id": "lstm_agent_1",
+      "type": "LSTM",
+      "trader_id": "rest_trader_1",
+      "model_path": "s3://your-bucket/models/lstm_model.h5"
+    }
+  ],
+  "traders": [
+    {
+      "id": "rest_trader_1",
+      "type": "REST",
+      "api_endpoint": "https://api.example.com",
+      "api_key": "your-api-key",
+      "api_secret": "your-api-secret"
+    }
+  ],
+  "default_order_amount": 0.001
+}
+
+

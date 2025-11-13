@@ -1,0 +1,112 @@
+# Lambda関数用のIAMロール
+resource "aws_iam_role" "lambda_role" {
+  name = "${var.project_name}-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# DynamoDBアクセス権限
+resource "aws_iam_role_policy" "lambda_dynamodb" {
+  name = "${var.project_name}-lambda-dynamodb-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.prices.arn,
+          aws_dynamodb_table.decisions.arn,
+          aws_dynamodb_table.orders.arn,
+          aws_dynamodb_table.performance.arn,
+          aws_dynamodb_table.simulations.arn
+        ]
+      }
+    ]
+  })
+}
+
+# CloudWatch Logs権限
+resource "aws_iam_role_policy" "lambda_logs" {
+  name = "${var.project_name}-lambda-logs-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# 価格取得Lambda関数
+resource "aws_lambda_function" "price_fetcher" {
+  filename         = "${path.module}/../lambda/price_fetcher/deployment.zip"
+  function_name    = "${var.project_name}-price-fetcher"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = var.lambda_runtime
+  timeout         = var.lambda_timeout
+  memory_size     = var.lambda_memory_size
+
+  environment {
+    variables = {
+      PRICES_TABLE = aws_dynamodb_table.prices.name
+      AWS_REGION   = var.aws_region
+    }
+  }
+
+  source_code_hash = filebase64sha256("${path.module}/../lambda/price_fetcher/deployment.zip")
+}
+
+# 取引エージェントLambda関数
+resource "aws_lambda_function" "trading_agent" {
+  filename         = "${path.module}/../lambda/trading_agent/deployment.zip"
+  function_name    = "${var.project_name}-trading-agent"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = var.lambda_runtime
+  timeout         = var.lambda_timeout
+  memory_size     = var.lambda_memory_size
+
+  environment {
+    variables = {
+      PRICES_TABLE      = aws_dynamodb_table.prices.name
+      DECISIONS_TABLE   = aws_dynamodb_table.decisions.name
+      ORDERS_TABLE      = aws_dynamodb_table.orders.name
+      PERFORMANCE_TABLE = aws_dynamodb_table.performance.name
+      AWS_REGION        = var.aws_region
+    }
+  }
+
+  source_code_hash = filebase64sha256("${path.module}/../lambda/trading_agent/deployment.zip")
+}
+
+
