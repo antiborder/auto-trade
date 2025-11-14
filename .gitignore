@@ -55,6 +55,5 @@ Thumbs.db
 logs/
 *.log
 
-# Config files with secrets
-lambda/trading_agent/config.json
-
+# Data (optional - uncomment if you don't want to commit test data)
+# data/*.csv
