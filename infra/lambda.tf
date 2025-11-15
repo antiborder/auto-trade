@@ -110,6 +110,7 @@ resource "aws_lambda_function" "price_fetcher" {
   environment {
     variables = {
       PRICES_TABLE = aws_dynamodb_table.prices.name
+      BYBIT_TESTNET = tostring(var.bybit_testnet)
     }
   }
 

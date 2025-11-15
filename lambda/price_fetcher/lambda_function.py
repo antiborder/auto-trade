@@ -14,28 +14,47 @@ dynamodb = boto3.resource('dynamodb')
 prices_table = dynamodb.Table(os.environ['PRICES_TABLE'])
 
 def fetch_bitcoin_price():
-    """Bitcoinの現在価格を取得"""
+    """Bitcoinの現在価格をBybitから取得"""
     try:
-        # CoinGecko APIを使用（無料、認証不要）
-        response = requests.get(
-            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true',
-            timeout=10
-        )
+        # Bybit Public APIを使用（認証不要）
+        # テストネットかどうかを環境変数から取得（デフォルトは本番環境）
+        use_testnet = os.getenv('BYBIT_TESTNET', 'false').lower() == 'true'
+        base_url = "https://api-testnet.bybit.com" if use_testnet else "https://api.bybit.com"
+        
+        url = f"{base_url}/v5/market/tickers"
+        params = {
+            "category": "spot",
+            "symbol": "BTCUSDT"
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        bitcoin_data = data.get('bitcoin', {})
-        price = bitcoin_data.get('usd', 0)
-        volume_24h = bitcoin_data.get('usd_24h_vol', 0)
-        change_24h = bitcoin_data.get('usd_24h_change', 0)
-        
-        return {
-            'price': price,
-            'volume_24h': volume_24h,
-            'change_24h': change_24h
-        }
+        if data.get("retCode") == 0 and data.get("result", {}).get("list"):
+            ticker = data["result"]["list"][0]
+            
+            price = float(ticker.get("lastPrice", 0))
+            volume_24h = float(ticker.get("volume24h", 0))
+            prev_price_24h = float(ticker.get("prevPrice24h", price))
+            
+            # 24時間変動率を計算（%）
+            if prev_price_24h > 0:
+                change_24h = ((price - prev_price_24h) / prev_price_24h) * 100
+            else:
+                change_24h = 0.0
+            
+            return {
+                'price': price,
+                'volume_24h': volume_24h,
+                'change_24h': change_24h
+            }
+        else:
+            error_msg = data.get("retMsg", "Unknown error")
+            raise Exception(f"Bybit API error: {error_msg}")
+            
     except Exception as e:
-        print(f"Error fetching price: {str(e)}")
+        print(f"Error fetching price from Bybit: {str(e)}")
         raise
 
 def lambda_handler(event, context):
@@ -58,7 +77,24 @@ def lambda_handler(event, context):
             'change_24h': Decimal(str(price_data.get('change_24h', 0)))
         }
         
-        prices_table.put_item(Item=item)
+        # DynamoDBに保存（明示的なエラーハンドリング）
+        try:
+            print(f"Attempting to save item: {json.dumps({k: str(v) for k, v in item.items()}, default=str)}")
+            response = prices_table.put_item(Item=item)
+            print(f"DynamoDB put_item response: {json.dumps(response, default=str)}")
+            
+            # Verify the item was actually saved by reading it back
+            verify_response = prices_table.get_item(Key={'timestamp': timestamp})
+            if 'Item' in verify_response:
+                print(f"✅ Verified: Item exists in DynamoDB")
+            else:
+                print(f"❌ WARNING: Item not found in DynamoDB after put_item!")
+                
+        except Exception as db_error:
+            print(f"Error saving to DynamoDB: {str(db_error)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            raise
         
         print(f"Price saved successfully: timestamp={timestamp}, price={price_data['price']}")
         
