@@ -1,0 +1,7 @@
+# Bybit API Credentials
+# Copy this file to terraform.tfvars and fill in your actual values
+# terraform.tfvars is in .gitignore and will NOT be committed to Git
+
+bybit_api_key    = "YOUR_BYBIT_API_KEY_HERE"
+bybit_api_secret = "YOUR_BYBIT_API_SECRET_HERE"
+bybit_testnet    = true  # Set to false for production
