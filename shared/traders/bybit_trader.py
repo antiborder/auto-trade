@@ -23,7 +23,7 @@ class BybitTrader(BaseTrader):
         else:
             self.base_url = "https://api.bybit.com"
     
-    def _generate_signature(self, params: dict, timestamp: str) -> str:
+    def _generate_signature(self, params: dict, timestamp: str, recv_window: str = "5000") -> str:
         """API署名を生成"""
         if not self.api_secret:
             return ""
@@ -32,8 +32,8 @@ class BybitTrader(BaseTrader):
         sorted_params = sorted(params.items())
         query_string = "&".join([f"{k}={v}" for k, v in sorted_params])
         
-        # 署名を生成
-        signature_string = f"{timestamp}{self.api_key}{query_string}"
+        # Bybit API v5の署名形式: timestamp + api_key + recv_window + query_string
+        signature_string = f"{timestamp}{self.api_key}{recv_window}{query_string}"
         signature = hmac.new(
             self.api_secret.encode('utf-8'),
             signature_string.encode('utf-8'),
@@ -180,14 +180,15 @@ class BybitTrader(BaseTrader):
                 params["price"] = str(price)
             
             # 署名を生成
-            signature = self._generate_signature(params, timestamp)
+            recv_window = "5000"
+            signature = self._generate_signature(params, timestamp, recv_window)
             
             # リクエストヘッダー
             headers = {
                 "X-BAPI-API-KEY": self.api_key,
                 "X-BAPI-SIGN": signature,
                 "X-BAPI-TIMESTAMP": timestamp,
-                "X-BAPI-RECV-WINDOW": "5000",
+                "X-BAPI-RECV-WINDOW": recv_window,
                 "Content-Type": "application/json"
             }
             
@@ -246,17 +247,18 @@ class BybitTrader(BaseTrader):
         
         try:
             timestamp = str(int(time.time() * 1000))
+            recv_window = "5000"
             params = {
-                "accountType": "SPOT"
+                "accountType": "UNIFIED"
             }
             
-            signature = self._generate_signature(params, timestamp)
+            signature = self._generate_signature(params, timestamp, recv_window)
             
             headers = {
                 "X-BAPI-API-KEY": self.api_key,
                 "X-BAPI-SIGN": signature,
                 "X-BAPI-TIMESTAMP": timestamp,
-                "X-BAPI-RECV-WINDOW": "5000",
+                "X-BAPI-RECV-WINDOW": recv_window,
                 "Content-Type": "application/json"
             }
             
@@ -265,11 +267,16 @@ class BybitTrader(BaseTrader):
             response.raise_for_status()
             data = response.json()
             
+            # デバッグ用: Bybitからのレスポンスをログ出力
+            print(f"Bybit API response: {data}")
+            
             if data.get("retCode") == 0:
                 result = data.get("result", {})
                 return result
             else:
-                return {"error": data.get("retMsg", "Unknown error")}
+                error_msg = data.get("retMsg", "Unknown error")
+                print(f"Bybit API error: retCode={data.get('retCode')}, retMsg={error_msg}")
+                return {"error": error_msg}
                 
         except Exception as e:
             return {"error": str(e)}

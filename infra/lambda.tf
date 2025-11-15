@@ -38,7 +38,8 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           aws_dynamodb_table.decisions.arn,
           aws_dynamodb_table.orders.arn,
           aws_dynamodb_table.performance.arn,
-          aws_dynamodb_table.simulations.arn
+          aws_dynamodb_table.simulations.arn,
+          aws_dynamodb_table.balance.arn
         ]
       }
     ]
@@ -133,6 +134,7 @@ resource "aws_lambda_function" "trading_agent" {
       DECISIONS_TABLE   = aws_dynamodb_table.decisions.name
       ORDERS_TABLE      = aws_dynamodb_table.orders.name
       PERFORMANCE_TABLE = aws_dynamodb_table.performance.name
+      BALANCE_TABLE     = aws_dynamodb_table.balance.name
       BYBIT_API_KEY     = var.bybit_api_key
       BYBIT_API_SECRET  = var.bybit_api_secret
       BYBIT_TESTNET     = tostring(var.bybit_testnet)

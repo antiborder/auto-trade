@@ -17,7 +17,8 @@ const TABLES = {
   decisions: process.env.DECISIONS_TABLE || 'trading-decisions',
   orders: process.env.ORDERS_TABLE || 'trading-orders',
   performance: process.env.PERFORMANCE_TABLE || 'agent-performance',
-  simulations: process.env.SIMULATIONS_TABLE || 'simulations'
+  simulations: process.env.SIMULATIONS_TABLE || 'simulations',
+  balance: process.env.BALANCE_TABLE || 'auto-trade-balance'
 }
 
 export async function getRecentPrices(limit: number = 100) {
@@ -28,10 +29,12 @@ export async function getRecentPrices(limit: number = 100) {
     })
     
     const response = await docClient.send(command)
+    console.log(`Fetched ${response.Items?.length || 0} price items from table: ${TABLES.prices}`)
     return response.Items || []
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching prices:', error)
-    return []
+    // エラー情報を返してデバッグしやすくする
+    throw new Error(`Failed to fetch prices: ${error.message || String(error)}`)
   }
 }
 
@@ -100,10 +103,28 @@ export async function getAllAgentsPerformance() {
     })
     
     const response = await docClient.send(command)
+    console.log(`Fetched ${response.Items?.length || 0} performance items from table: ${TABLES.performance}`)
     return response.Items || []
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching all performance:', error)
-    return []
+    // エラー情報を返してデバッグしやすくする
+    throw new Error(`Failed to fetch performance: ${error.message || String(error)}`)
+  }
+}
+
+export async function getRecentBalances(limit: number = 100) {
+  try {
+    const command = new ScanCommand({
+      TableName: TABLES.balance,
+      Limit: limit
+    })
+    
+    const response = await docClient.send(command)
+    console.log(`Fetched ${response.Items?.length || 0} balance items from table: ${TABLES.balance}`)
+    return response.Items || []
+  } catch (error: any) {
+    console.error('Error fetching balances:', error)
+    throw new Error(`Failed to fetch balances: ${error.message || String(error)}`)
   }
 }
 

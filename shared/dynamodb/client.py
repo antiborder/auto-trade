@@ -19,7 +19,8 @@ class DynamoDBClient:
             'decisions': os.getenv('DECISIONS_TABLE', 'trading-decisions'),
             'orders': os.getenv('ORDERS_TABLE', 'trading-orders'),
             'performance': os.getenv('PERFORMANCE_TABLE', 'agent-performance'),
-            'simulations': os.getenv('SIMULATIONS_TABLE', 'simulations')
+            'simulations': os.getenv('SIMULATIONS_TABLE', 'simulations'),
+            'balance': os.getenv('BALANCE_TABLE', 'trading-balance')
         }
     
     def _serialize_value(self, value):
@@ -127,5 +128,27 @@ class DynamoDBClient:
             item = response['Item']
             return {k: self._deserialize_value(v) for k, v in item.items()}
         return None
+    
+    def put_balance(self, timestamp: datetime, usdt_balance: float, btc_balance: float, **kwargs):
+        """残高を保存"""
+        table = self.dynamodb.Table(self.table_names['balance'])
+        item = {
+            'timestamp': timestamp.isoformat(),
+            'usdt_balance': Decimal(str(usdt_balance)),
+            'btc_balance': Decimal(str(btc_balance)),
+            **{k: self._serialize_value(v) for k, v in kwargs.items()}
+        }
+        table.put_item(Item=item)
+    
+    def get_recent_balances(self, limit: int = 100) -> list:
+        """最近の残高データを取得"""
+        table = self.dynamodb.Table(self.table_names['balance'])
+        response = table.scan(
+            Limit=limit
+        )
+        items = response.get('Items', [])
+        # タイムスタンプでソート
+        items.sort(key=lambda x: x.get('timestamp', ''))
+        return [{k: self._deserialize_value(v) for k, v in item.items()} for item in items]
 
 

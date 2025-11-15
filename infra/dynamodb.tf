@@ -106,4 +106,21 @@ resource "aws_dynamodb_table" "simulations" {
   }
 }
 
+# 残高テーブル
+resource "aws_dynamodb_table" "balance" {
+  name           = "${var.project_name}-balance"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "timestamp"
+
+  attribute {
+    name = "timestamp"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "${var.project_name}-balance"
+    Environment = "production"
+  }
+}
+
 
