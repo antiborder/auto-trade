@@ -1,23 +1,12 @@
 {
   "agents": [
     {
-      "id": "simple_ma_agent_1",
+      "id": "simple-agent-1",
       "type": "SimpleMA",
-      "trader_id": "rest_trader_1",
       "short_window": 5,
-      "long_window": 20
+      "long_window": 20,
+      "trader_id": null
     }
   ],
-  "traders": [
-    {
-      "id": "rest_trader_1",
-      "type": "REST",
-      "api_endpoint": "https://testnet.binance.vision",
-      "api_key": "oaSSlWCktljT938hvEeI6lk3AkJxDTREOrBlhmmYlJCdvhUNcBnaiLCXVium9WcE",
-      "api_secret": "kJzdQ8bJqZUU4FcWkcI3sK0em9PCjKncqM2aLgv1TMl1UpMpDG7aKYDTn7Vaihyz"
-    }
-  ],
-  "default_order_amount": 0.001
+  "traders": []
 }
-
-

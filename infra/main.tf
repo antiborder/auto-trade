@@ -6,14 +6,19 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
   
-  backend "s3" {
-    # S3バックエンドの設定（必要に応じて変更）
-    bucket = "auto-trade-terraform-state"
-    key    = "terraform.tfstate"
-    region = "ap-northeast-1"
-  }
+  # 開発環境ではローカルバックエンドを使用
+  # 本番環境ではS3バックエンドを使用することを推奨
+  # backend "s3" {
+  #   bucket = "auto-trade-terraform-state"
+  #   key    = "terraform.tfstate"
+  #   region = "ap-northeast-1"
+  # }
 }
 
 provider "aws" {

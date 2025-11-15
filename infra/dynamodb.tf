@@ -63,6 +63,7 @@ resource "aws_dynamodb_table" "orders" {
     name     = "agent-timestamp-index"
     hash_key = "agent_id"
     range_key = "timestamp"
+    projection_type = "ALL"
   }
 
   tags = {

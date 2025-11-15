@@ -66,9 +66,40 @@ resource "aws_iam_role_policy" "lambda_logs" {
   })
 }
 
+# ECRアクセス権限（Lambda関数がECRからイメージを取得するため）
+resource "aws_iam_role_policy" "lambda_ecr" {
+  name = "${var.project_name}-lambda-ecr-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Lambda関数用のS3オブジェクト（price_fetcher）
+resource "aws_s3_object" "price_fetcher_code" {
+  bucket = aws_s3_bucket.lambda_deployments.id
+  key    = "price_fetcher/deployment.zip"
+  source = "${path.module}/../lambda/price_fetcher/deployment.zip"
+  etag   = filemd5("${path.module}/../lambda/price_fetcher/deployment.zip")
+}
+
 # 価格取得Lambda関数
 resource "aws_lambda_function" "price_fetcher" {
-  filename         = "${path.module}/../lambda/price_fetcher/deployment.zip"
+  s3_bucket        = aws_s3_bucket.lambda_deployments.id
+  s3_key           = aws_s3_object.price_fetcher_code.key
   function_name    = "${var.project_name}-price-fetcher"
   role            = aws_iam_role.lambda_role.arn
   handler         = "lambda_function.lambda_handler"
@@ -79,22 +110,21 @@ resource "aws_lambda_function" "price_fetcher" {
   environment {
     variables = {
       PRICES_TABLE = aws_dynamodb_table.prices.name
-      AWS_REGION   = var.aws_region
     }
   }
 
   source_code_hash = filebase64sha256("${path.module}/../lambda/price_fetcher/deployment.zip")
 }
 
-# 取引エージェントLambda関数
+# 取引エージェントLambda関数（コンテナイメージ方式）
 resource "aws_lambda_function" "trading_agent" {
-  filename         = "${path.module}/../lambda/trading_agent/deployment.zip"
-  function_name    = "${var.project_name}-trading-agent"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "lambda_function.lambda_handler"
-  runtime         = var.lambda_runtime
-  timeout         = var.lambda_timeout
-  memory_size     = var.lambda_memory_size
+  function_name = "${var.project_name}-trading-agent"
+  role          = aws_iam_role.lambda_role.arn
+  timeout       = var.lambda_timeout
+  memory_size   = var.lambda_memory_size
+
+  package_type = "Image"
+  image_uri    = "${aws_ecr_repository.trading_agent.repository_url}:latest"
 
   environment {
     variables = {
@@ -102,11 +132,15 @@ resource "aws_lambda_function" "trading_agent" {
       DECISIONS_TABLE   = aws_dynamodb_table.decisions.name
       ORDERS_TABLE      = aws_dynamodb_table.orders.name
       PERFORMANCE_TABLE = aws_dynamodb_table.performance.name
-      AWS_REGION        = var.aws_region
+      BYBIT_API_KEY     = var.bybit_api_key
+      BYBIT_API_SECRET  = var.bybit_api_secret
+      BYBIT_TESTNET     = tostring(var.bybit_testnet)
     }
   }
 
-  source_code_hash = filebase64sha256("${path.module}/../lambda/trading_agent/deployment.zip")
+  # イメージが更新されたときに再デプロイするためのトリガー
+  # 実際のデプロイはDockerイメージをプッシュした後に行う
+  depends_on = [aws_ecr_repository.trading_agent]
 }
 
 
