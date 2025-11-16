@@ -2,6 +2,7 @@
 Gate.io取引所用トレーダー
 """
 import os
+import json
 import requests
 import hmac
 import hashlib
@@ -15,21 +16,47 @@ from shared.models.trading import Action, Order, OrderStatus, PriceData
 class GateIOTrader(BaseTrader):
     """Gate.io取引所用トレーダー"""
     
-    def __init__(self, trader_id: str, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(self, trader_id: str, api_key: Optional[str] = None, api_secret: Optional[str] = None, testnet: bool = True):
         super().__init__(trader_id, api_key, api_secret)
-        self.base_url = "https://api.gateio.ws/api/v4"
+        # Testnet用のAPIエンドポイントを使用
+        if testnet:
+            self.base_url = "https://api-testnet.gateapi.io/api/v4"
+        else:
+            self.base_url = "https://api.gateio.ws/api/v4"
     
     def _generate_signature(self, method: str, url_path: str, query_string: str = "", payload: str = "") -> dict:
-        """Gate.io API署名を生成"""
+        """
+        Gate.io API署名を生成
+        
+        Signature string format:
+        METHOD\nURL\nQuery String\nHexEncode(SHA512(Payload))\nTimestamp
+        
+        Reference: https://www.gate.io/docs/developers/apiv4/
+        """
         if not self.api_key or not self.api_secret:
             return {}
         
-        timestamp = str(time.time())
+        # タイムスタンプはUnix時間（秒）の整数値（ドキュメントの例に従う）
+        timestamp = str(int(time.time()))
+        
+        # PayloadをSHA512でハッシュしてHexEncode
+        # 空のペイロードの場合は空文字列のハッシュ結果を使用
+        m = hashlib.sha512()
+        m.update((payload or "").encode('utf-8'))
+        payload_hash = m.hexdigest()
         
         # 署名文字列を作成
-        # Format: METHOD\nURL\nQuery String\nSHA256 Payload\nTimestamp
-        payload_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest() if payload else ""
-        sign_string = f"{method}\n{url_path}\n{query_string}\n{payload_hash}\n{timestamp}"
+        # Format: METHOD\nURL\nQuery String\nHexEncode(SHA512(Payload))\nTimestamp
+        # ドキュメントの例に従い、query_stringがNoneの場合は空文字列を使用
+        query_str = query_string if query_string else ""
+        sign_string = f"{method}\n{url_path}\n{query_str}\n{payload_hash}\n{timestamp}"
+        
+        # デバッグ: 署名文字列の形式を確認（改行を\\nで表示）
+        print(f"Signature string (repr): {repr(sign_string)}")
+        print(f"Signature string length: {len(sign_string)}")
+        print(f"Payload hash: {payload_hash}")
+        print(f"Query string: '{query_str}'")
+        print(f"Timestamp: {timestamp}")
         
         # HMAC-SHA512で署名
         signature = hmac.new(
@@ -162,8 +189,9 @@ class GateIOTrader(BaseTrader):
         
         try:
             symbol = "BTC_USDT"
-            url_path = "/spot/orders"
-            url = f"{self.base_url}{url_path}"
+            # Gate.io APIの署名文字列には /api/v4 を含める必要がある
+            url_path = "/api/v4/spot/orders"
+            url = f"{self.base_url}/spot/orders"
             
             # 注文パラメータ
             order_data = {
@@ -178,14 +206,16 @@ class GateIOTrader(BaseTrader):
             else:
                 order_data["type"] = "market"
             
-            payload = ""
+            # 注文データをJSON文字列に変換（署名生成用）
+            payload_string = json.dumps(order_data)
             query_string = ""
             
-            # 署名を生成
-            headers = self._generate_signature("POST", url_path, query_string, payload)
+            # 署名を生成（payloadはJSON文字列）
+            headers = self._generate_signature("POST", url_path, query_string, payload_string)
             headers["Content-Type"] = "application/json"
             
-            response = requests.post(url, json=order_data, headers=headers, timeout=10)
+            # リクエストボディはJSON文字列として送信
+            response = requests.post(url, data=payload_string, headers=headers, timeout=10)
             response.raise_for_status()
             data = response.json()
             
@@ -241,36 +271,53 @@ class GateIOTrader(BaseTrader):
             )
     
     def get_balance(self) -> dict:
-        """残高を取得"""
+        """
+        残高を取得
+        
+        Returns:
+            dict: Gate.io APIの残高レスポンス形式
+            [
+                {
+                    "currency": "USDT",
+                    "available": "1000.0",
+                    "locked": "0.0"
+                },
+                {
+                    "currency": "BTC",
+                    "available": "0.1",
+                    "locked": "0.0"
+                }
+            ]
+        """
         if not self.api_key or not self.api_secret:
             return {"error": "API key or secret not configured"}
         
         try:
-            url_path = "/spot/accounts"
-            url = f"{self.base_url}{url_path}"
+            # Gate.io APIの署名文字列には /api/v4 を含める必要がある
+            url_path = "/api/v4/spot/accounts"
+            url = f"{self.base_url}/spot/accounts"
             query_string = ""
             payload = ""
             
+            print(f"Getting balance from Gate.io: {url}")
             headers = self._generate_signature("GET", url_path, query_string, payload)
+            print(f"Headers: KEY={headers.get('KEY', 'N/A')[:10]}..., Timestamp={headers.get('Timestamp', 'N/A')}, SIGN={headers.get('SIGN', 'N/A')[:20]}...")
             
             response = requests.get(url, headers=headers, timeout=10)
+            print(f"Response status: {response.status_code}")
+            if response.status_code != 200:
+                print(f"Response body: {response.text[:500]}")
             response.raise_for_status()
             data = response.json()
             
+            # Gate.io APIは直接coinのリストを返す
             if isinstance(data, list):
-                # Gate.ioの残高レスポンスをBybit形式に変換（互換性のため）
-                result = {
-                    "result": {
-                        "list": [{
-                            "coin": data  # Gate.ioは直接coinのリストを返す
-                        }]
-                    }
-                }
-                return result
+                return data
             else:
                 return {"error": "Invalid response format"}
                 
         except Exception as e:
+            print(f"Error getting balance from Gate.io: {str(e)}")
             return {"error": str(e)}
     
     def get_trader_type(self) -> str:

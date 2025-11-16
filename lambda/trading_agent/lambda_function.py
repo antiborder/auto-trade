@@ -84,11 +84,16 @@ def lambda_handler(event, context):
         gateio_api_key = os.getenv('GATEIO_API_KEY')
         gateio_api_secret = os.getenv('GATEIO_API_SECRET')
         
-        # Gate.io traderを作成
+        # デバッグ: 環境変数の存在を確認（値は出力しない）
+        print(f"GATEIO_API_KEY exists: {gateio_api_key is not None and len(gateio_api_key) > 0}")
+        print(f"GATEIO_API_SECRET exists: {gateio_api_secret is not None and len(gateio_api_secret) > 0}")
+        
+        # Gate.io traderを作成（Testnet APIキーを使用）
         gateio_trader = GateIOTrader(
             trader_id='gateio-trader-1',
             api_key=gateio_api_key,
-            api_secret=gateio_api_secret
+            api_secret=gateio_api_secret,
+            testnet=True  # Testnet APIキーを使用
         )
         
         # 現在の価格を取得
@@ -112,41 +117,44 @@ def lambda_handler(event, context):
         # 残高を取得して保存（各エージェントの判断前に一度だけ実行）
         try:
             balance = gateio_trader.get_balance()
-            if "error" not in balance:
+            # Gate.io APIは直接coinのリストを返す、またはエラーディクショナリを返す
+            if isinstance(balance, list):
+                # Gate.ioの残高レスポンス形式: [{"currency": "USDT", "available": "1000.0", "locked": "0.0"}, ...]
+                usdt_balance = 0.0
+                btc_balance = 0.0
+                
+                for coin in balance:
+                    currency = coin.get("currency", "")
+                    # Gate.ioは"available"フィールドを使用（利用可能残高）
+                    available_str = coin.get("available", "0")
+                    try:
+                        available = float(available_str) if available_str else 0.0
+                    except (ValueError, TypeError):
+                        available = 0.0
+                    
+                    if currency == "USDT":
+                        usdt_balance = available
+                    elif currency == "BTC":
+                        btc_balance = available
+                
+                # 残高をDynamoDBに保存
                 try:
-                    coin_list = balance.get("result", {}).get("list", [])
-                    if coin_list:
-                        coins = coin_list[0].get("coin", [])
-                        usdt_balance = 0.0
-                        btc_balance = 0.0
-                        
-                        for coin in coins:
-                            # Gate.ioの残高レスポンス形式に対応
-                            coin_type = coin.get("currency", coin.get("coin", ""))
-                            # Gate.ioは"available"フィールドを使用
-                            available = float(coin.get("available", coin.get("availableToWithdraw", "0")) or "0")
-                            
-                            if coin_type == "USDT":
-                                usdt_balance = available
-                            elif coin_type == "BTC":
-                                btc_balance = available
-                        
-                        # 残高をDynamoDBに保存
-                        try:
-                            db_client.put_balance(
-                                timestamp=datetime.utcnow(),
-                                usdt_balance=usdt_balance,
-                                btc_balance=btc_balance
-                            )
-                            print(f"Balance saved: USDT={usdt_balance:.2f}, BTC={btc_balance:.6f}")
-                        except Exception as e:
-                            print(f"Failed to save balance to DynamoDB: {str(e)}")
+                    db_client.put_balance(
+                        timestamp=datetime.utcnow(),
+                        usdt_balance=usdt_balance,
+                        btc_balance=btc_balance
+                    )
+                    print(f"Balance saved: USDT={usdt_balance:.2f}, BTC={btc_balance:.6f}")
                 except Exception as e:
-                    print(f"Error parsing balance: {str(e)}")
-            else:
+                    print(f"Failed to save balance to DynamoDB: {str(e)}")
+            elif isinstance(balance, dict) and "error" in balance:
                 print(f"Failed to get balance: {balance.get('error')}")
+            else:
+                print(f"Unexpected balance response format: {type(balance)}")
         except Exception as e:
             print(f"Error getting balance: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
         
         results = []
         
@@ -179,52 +187,50 @@ def lambda_handler(event, context):
                     can_trade = False
                     insufficient_funds_reason = None
                     
-                    if "error" in balance:
+                    if isinstance(balance, dict) and "error" in balance:
                         print(f"Failed to get balance: {balance.get('error')}")
                         insufficient_funds_reason = f"Balance check failed: {balance.get('error')}"
-                    else:
-                        # Gate.io APIの残高レスポンス構造を解析
-                        # result.list[0].coin[] に各コインの残高が含まれる
+                    elif isinstance(balance, list):
+                        # Gate.io APIの残高レスポンス形式: [{"currency": "USDT", "available": "1000.0", "locked": "0.0"}, ...]
                         try:
-                            coin_list = balance.get("result", {}).get("list", [])
-                            if coin_list:
-                                coins = coin_list[0].get("coin", [])
-                                usdt_balance = 0.0
-                                btc_balance = 0.0
+                            usdt_balance = 0.0
+                            btc_balance = 0.0
+                            
+                            for coin in balance:
+                                currency = coin.get("currency", "")
+                                available_str = coin.get("available", "0")
+                                try:
+                                    available = float(available_str) if available_str else 0.0
+                                except (ValueError, TypeError):
+                                    available = 0.0
                                 
-                                for coin in coins:
-                                    # Gate.ioの残高レスポンス形式に対応
-                                    coin_type = coin.get("currency", coin.get("coin", ""))
-                                    # Gate.ioは"available"フィールドを使用
-                                    available = float(coin.get("available", coin.get("availableToWithdraw", "0")) or "0")
-                                    
-                                    if coin_type == "USDT":
-                                        usdt_balance = available
-                                    elif coin_type == "BTC":
-                                        btc_balance = available
+                                if currency == "USDT":
+                                    usdt_balance = available
+                                elif currency == "BTC":
+                                    btc_balance = available
                                 
-                                if decision.action == Action.BUY:
-                                    # 買い注文: USDT残高を確認
-                                    order_cost_usdt = order_amount_btc * current_price.price
-                                    # 手数料を考慮（約0.1%）
-                                    total_cost = order_cost_usdt * 1.001
+                            if decision.action == Action.BUY:
+                                # 買い注文: USDT残高を確認
+                                order_cost_usdt = order_amount_btc * current_price.price
+                                # 手数料を考慮（約0.1%）
+                                total_cost = order_cost_usdt * 1.001
+                                
+                                if usdt_balance >= total_cost:
+                                    can_trade = True
+                                else:
+                                    insufficient_funds_reason = f"Insufficient USDT balance: {usdt_balance:.2f} USDT < {total_cost:.2f} USDT required"
                                     
-                                    if usdt_balance >= total_cost:
-                                        can_trade = True
-                                    else:
-                                        insufficient_funds_reason = f"Insufficient USDT balance: {usdt_balance:.2f} USDT < {total_cost:.2f} USDT required"
-                                        
-                                elif decision.action == Action.SELL:
-                                    # 売り注文: BTC保有量を確認
-                                    if btc_balance >= order_amount_btc:
-                                        can_trade = True
-                                    else:
-                                        insufficient_funds_reason = f"Insufficient BTC balance: {btc_balance:.6f} BTC < {order_amount_btc:.6f} BTC required"
-                            else:
-                                insufficient_funds_reason = "No balance data available"
+                            elif decision.action == Action.SELL:
+                                # 売り注文: BTC保有量を確認
+                                if btc_balance >= order_amount_btc:
+                                    can_trade = True
+                                else:
+                                    insufficient_funds_reason = f"Insufficient BTC balance: {btc_balance:.6f} BTC < {order_amount_btc:.6f} BTC required"
                         except Exception as e:
                             print(f"Error parsing balance: {str(e)}")
                             insufficient_funds_reason = f"Error parsing balance: {str(e)}"
+                    else:
+                        insufficient_funds_reason = f"Unexpected balance response format: {type(balance)}"
                     
                     if not can_trade:
                         print(f"Skipping order due to insufficient funds: {insufficient_funds_reason}")

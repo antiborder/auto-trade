@@ -1,4 +1,4 @@
-.PHONY: help init deploy-lambda build-trading-agent deploy clean
+.PHONY: help init deploy-lambda build-trading-agent update-trading-agent deploy clean
 
 # デフォルトのターゲット
 .DEFAULT_GOAL := help
@@ -30,7 +30,18 @@ build-trading-agent: ## trading_agentのDockerイメージをビルドしてECR�
 	@chmod +x $(SCRIPTS_DIR)/build_and_push_trading_agent.sh
 	@AWS_PROFILE=auto-trade AWS_REGION=$(AWS_REGION) IMAGE_TAG=$(IMAGE_TAG) $(SCRIPTS_DIR)/build_and_push_trading_agent.sh
 
-deploy-lambda: package-lambda build-trading-agent ## Lambda関数をデプロイ（パッケージ作成 + Dockerイメージビルド）
+update-trading-agent: build-trading-agent ## trading_agent Lambda関数を更新（Dockerイメージをプッシュ後に実行）
+	@echo "🔄 trading_agent Lambda関数を更新中..."
+	@AWS_ACCOUNT_ID=$$(AWS_PROFILE=auto-trade aws sts get-caller-identity --query Account --output text); \
+	IMAGE_URI="$$AWS_ACCOUNT_ID.dkr.ecr.$(AWS_REGION).amazonaws.com/$(ECR_REPO):$(IMAGE_TAG)"; \
+	AWS_PROFILE=auto-trade aws lambda update-function-code \
+		--function-name $(PROJECT_NAME)-trading-agent \
+		--image-uri $$IMAGE_URI \
+		--output json > /dev/null && \
+	echo "✅ trading_agent Lambda関数を更新しました ($$IMAGE_URI)" || \
+	echo "❌ trading_agent Lambda関数の更新に失敗しました"
+
+deploy-lambda: package-lambda update-trading-agent ## Lambda関数をデプロイ（パッケージ作成 + Dockerイメージビルド + Lambda更新）
 
 plan: init ## Terraformの実行計画を表示
 	@echo "📋 Terraformの実行計画を表示中..."
