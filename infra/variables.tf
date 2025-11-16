@@ -28,24 +28,18 @@ variable "lambda_memory_size" {
   default     = 512
 }
 
-variable "bybit_api_key" {
-  description = "Bybit API Key (optional, for trading agent)"
+variable "gateio_api_key" {
+  description = "Gate.io API Key (optional, for trading agent)"
   type        = string
   default     = ""
   sensitive   = true
 }
 
-variable "bybit_api_secret" {
-  description = "Bybit API Secret (optional, for trading agent)"
+variable "gateio_api_secret" {
+  description = "Gate.io API Secret (optional, for trading agent)"
   type        = string
   default     = ""
   sensitive   = true
-}
-
-variable "bybit_testnet" {
-  description = "Use Bybit testnet (true/false)"
-  type        = bool
-  default     = true
 }
 
 

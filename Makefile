@@ -28,7 +28,7 @@ package-lambda: ## Lambda関数のZIPパッケージを作成（price_fetcher用
 build-trading-agent: ## trading_agentのDockerイメージをビルドしてECRにプッシュ
 	@echo "🐳 trading_agentのDockerイメージをビルド中..."
 	@chmod +x $(SCRIPTS_DIR)/build_and_push_trading_agent.sh
-	@AWS_REGION=$(AWS_REGION) IMAGE_TAG=$(IMAGE_TAG) $(SCRIPTS_DIR)/build_and_push_trading_agent.sh
+	@AWS_PROFILE=auto-trade AWS_REGION=$(AWS_REGION) IMAGE_TAG=$(IMAGE_TAG) $(SCRIPTS_DIR)/build_and_push_trading_agent.sh
 
 deploy-lambda: package-lambda build-trading-agent ## Lambda関数をデプロイ（パッケージ作成 + Dockerイメージビルド）
 

@@ -7,10 +7,6 @@ interface BalanceChartProps {
 }
 
 export default function BalanceChart({ data }: BalanceChartProps) {
-  if (!data || data.length === 0) {
-    return <div className="text-gray-500">残高データがありません</div>
-  }
-
   const chartData = data
     .map(item => ({
       timestamp: new Date(item.timestamp).toLocaleString(),

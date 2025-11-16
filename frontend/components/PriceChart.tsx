@@ -7,12 +7,18 @@ interface PriceChartProps {
 }
 
 export default function PriceChart({ data }: PriceChartProps) {
+  // まず元のタイムスタンプでソートしてから、表示用に変換
   const chartData = data
     .map(item => ({
-      timestamp: new Date(item.timestamp).toLocaleString(),
+      timestamp: item.timestamp, // 元のタイムスタンプを保持
+      timestampDisplay: new Date(item.timestamp).toLocaleString(), // 表示用
       price: parseFloat(item.price)
     }))
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    .map(item => ({
+      timestamp: item.timestampDisplay, // ソート後に表示用に変換
+      price: item.price
+    }))
 
   return (
     <ResponsiveContainer width="100%" height={400}>

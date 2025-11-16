@@ -18,19 +18,38 @@ const TABLES = {
   orders: process.env.ORDERS_TABLE || 'trading-orders',
   performance: process.env.PERFORMANCE_TABLE || 'agent-performance',
   simulations: process.env.SIMULATIONS_TABLE || 'simulations',
-  balance: process.env.BALANCE_TABLE || 'auto-trade-balance'
+  balance: process.env.BALANCE_TABLE || 'trading-balance'
 }
 
 export async function getRecentPrices(limit: number = 100) {
   try {
-    const command = new ScanCommand({
-      TableName: TABLES.prices,
-      Limit: limit
+    // DynamoDBのスキャンは順序を保証しないため、全件取得してからソートする
+    const allItems: any[] = []
+    let lastEvaluatedKey: any = undefined
+    
+    do {
+      const command = new ScanCommand({
+        TableName: TABLES.prices,
+        ExclusiveStartKey: lastEvaluatedKey
+      })
+      
+      const response = await docClient.send(command)
+      if (response.Items) {
+        allItems.push(...response.Items)
+      }
+      lastEvaluatedKey = response.LastEvaluatedKey
+    } while (lastEvaluatedKey)
+    
+    // タイムスタンプでソートして最新のN件を返す
+    const sortedItems = allItems.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime()
+      const timeB = new Date(b.timestamp).getTime()
+      return timeB - timeA // 降順（新しい順）
     })
     
-    const response = await docClient.send(command)
-    console.log(`Fetched ${response.Items?.length || 0} price items from table: ${TABLES.prices}`)
-    return response.Items || []
+    const recentItems = sortedItems.slice(0, limit).reverse() // 古い順に並び替え
+    console.log(`Fetched ${allItems.length} total items, returning ${recentItems.length} recent items from table: ${TABLES.prices}`)
+    return recentItems
   } catch (error: any) {
     console.error('Error fetching prices:', error)
     // エラー情報を返してデバッグしやすくする

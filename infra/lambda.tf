@@ -38,8 +38,7 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           aws_dynamodb_table.decisions.arn,
           aws_dynamodb_table.orders.arn,
           aws_dynamodb_table.performance.arn,
-          aws_dynamodb_table.simulations.arn,
-          aws_dynamodb_table.balance.arn
+          aws_dynamodb_table.simulations.arn
         ]
       }
     ]
@@ -111,7 +110,6 @@ resource "aws_lambda_function" "price_fetcher" {
   environment {
     variables = {
       PRICES_TABLE = aws_dynamodb_table.prices.name
-      BYBIT_TESTNET = tostring(var.bybit_testnet)
     }
   }
 
@@ -135,9 +133,8 @@ resource "aws_lambda_function" "trading_agent" {
       ORDERS_TABLE      = aws_dynamodb_table.orders.name
       PERFORMANCE_TABLE = aws_dynamodb_table.performance.name
       BALANCE_TABLE     = aws_dynamodb_table.balance.name
-      BYBIT_API_KEY     = var.bybit_api_key
-      BYBIT_API_SECRET  = var.bybit_api_secret
-      BYBIT_TESTNET     = tostring(var.bybit_testnet)
+      GATEIO_API_KEY    = var.gateio_api_key
+      GATEIO_API_SECRET = var.gateio_api_secret
     }
   }
 

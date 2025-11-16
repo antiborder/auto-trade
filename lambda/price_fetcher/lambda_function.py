@@ -14,47 +14,35 @@ dynamodb = boto3.resource('dynamodb')
 prices_table = dynamodb.Table(os.environ['PRICES_TABLE'])
 
 def fetch_bitcoin_price():
-    """Bitcoinの現在価格をBybitから取得"""
+    """Bitcoinの現在価格をGate.ioから取得"""
     try:
-        # Bybit Public APIを使用（認証不要）
-        # テストネットかどうかを環境変数から取得（デフォルトは本番環境）
-        use_testnet = os.getenv('BYBIT_TESTNET', 'false').lower() == 'true'
-        base_url = "https://api-testnet.bybit.com" if use_testnet else "https://api.bybit.com"
+        # Gate.io Public APIを使用（認証不要）
+        base_url = "https://api.gateio.ws/api/v4"
         
-        url = f"{base_url}/v5/market/tickers"
+        url = f"{base_url}/spot/tickers"
         params = {
-            "category": "spot",
-            "symbol": "BTCUSDT"
+            "currency_pair": "BTC_USDT"
         }
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         
-        if data.get("retCode") == 0 and data.get("result", {}).get("list"):
-            ticker = data["result"]["list"][0]
+        if isinstance(data, list) and len(data) > 0:
+            ticker = data[0]
             
-            price = float(ticker.get("lastPrice", 0))
-            volume_24h = float(ticker.get("volume24h", 0))
-            prev_price_24h = float(ticker.get("prevPrice24h", price))
-            
-            # 24時間変動率を計算（%）
-            if prev_price_24h > 0:
-                change_24h = ((price - prev_price_24h) / prev_price_24h) * 100
-            else:
-                change_24h = 0.0
+            price = float(ticker.get("last", 0))
+            volume_24h = float(ticker.get("base_volume", 0))
             
             return {
                 'price': price,
-                'volume_24h': volume_24h,
-                'change_24h': change_24h
+                'volume_24h': volume_24h
             }
         else:
-            error_msg = data.get("retMsg", "Unknown error")
-            raise Exception(f"Bybit API error: {error_msg}")
+            raise Exception(f"Gate.io API error: Invalid response format")
             
     except Exception as e:
-        print(f"Error fetching price from Bybit: {str(e)}")
+        print(f"Error fetching price from Gate.io: {str(e)}")
         raise
 
 def lambda_handler(event, context):
@@ -73,8 +61,7 @@ def lambda_handler(event, context):
         item = {
             'timestamp': timestamp,
             'price': Decimal(str(price_data['price'])),
-            'volume_24h': Decimal(str(price_data.get('volume_24h', 0))),
-            'change_24h': Decimal(str(price_data.get('change_24h', 0)))
+            'volume_24h': Decimal(str(price_data.get('volume_24h', 0)))
         }
         
         # DynamoDBに保存（明示的なエラーハンドリング）

@@ -9,9 +9,12 @@ PROJECT_NAME="auto-trade"
 ECR_REPO="${PROJECT_NAME}-trading-agent"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
-# AWSプロファイルを確認
+# AWSプロファイルを確認（auto-tradeプロファイルをデフォルトとして使用）
 if [ -z "$AWS_PROFILE" ]; then
-    echo "Warning: AWS_PROFILE is not set. Using default profile."
+    export AWS_PROFILE=auto-trade
+    echo "Using AWS_PROFILE=auto-trade (auto-trade-dev-user)"
+else
+    echo "Using AWS_PROFILE=$AWS_PROFILE"
 fi
 
 # ECRリポジトリのURIを取得

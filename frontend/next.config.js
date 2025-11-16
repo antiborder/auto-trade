@@ -10,7 +10,7 @@ const nextConfig = {
     ORDERS_TABLE: process.env.ORDERS_TABLE || 'trading-orders',
     PERFORMANCE_TABLE: process.env.PERFORMANCE_TABLE || 'agent-performance',
     SIMULATIONS_TABLE: process.env.SIMULATIONS_TABLE || 'simulations',
-    BALANCE_TABLE: process.env.BALANCE_TABLE || 'auto-trade-balance',
+    BALANCE_TABLE: process.env.BALANCE_TABLE || 'trading-balance',
   },
 }
 

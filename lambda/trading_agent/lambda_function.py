@@ -18,7 +18,7 @@ from shared.agents.base_agent import BaseAgent
 from shared.agents.simple_agent import SimpleAgent
 from shared.agents.lstm_agent import LSTMAgent
 from shared.models.trading import PriceData, TradingDecision, Action, OrderStatus
-from shared.traders.bybit_trader import BybitTrader
+from shared.traders.gateio_trader import GateIOTrader
 
 # DynamoDBクライアント
 db_client = DynamoDBClient()
@@ -80,29 +80,27 @@ def lambda_handler(event, context):
                 ]
             }
         
-        # Bybitから価格データを取得
-        bybit_api_key = os.getenv('BYBIT_API_KEY')
-        bybit_api_secret = os.getenv('BYBIT_API_SECRET')
-        bybit_testnet = os.getenv('BYBIT_TESTNET', 'false').lower() == 'true'
+        # Gate.ioから価格データを取得
+        gateio_api_key = os.getenv('GATEIO_API_KEY')
+        gateio_api_secret = os.getenv('GATEIO_API_SECRET')
         
-        # Bybit traderを作成
-        bybit_trader = BybitTrader(
-            trader_id='bybit-trader-1',
-            api_key=bybit_api_key,
-            api_secret=bybit_api_secret,
-            testnet=bybit_testnet
+        # Gate.io traderを作成
+        gateio_trader = GateIOTrader(
+            trader_id='gateio-trader-1',
+            api_key=gateio_api_key,
+            api_secret=gateio_api_secret
         )
         
         # 現在の価格を取得
-        current_price = bybit_trader.get_current_price(symbol='BTCUSDT')
+        current_price = gateio_trader.get_current_price(symbol='BTC_USDT')
         if not current_price:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'Failed to fetch price from Bybit'})
+                'body': json.dumps({'error': 'Failed to fetch price from Gate.io'})
             }
         
         # 過去のK線データを取得（5分足、100件）
-        historical_data = bybit_trader.get_klines(symbol='BTCUSDT', interval='5', limit=100)
+        historical_data = gateio_trader.get_klines(symbol='BTC_USDT', interval='5m', limit=100)
         
         if not historical_data:
             # K線データが取得できない場合は、現在の価格のみを使用
@@ -113,30 +111,20 @@ def lambda_handler(event, context):
         
         # 残高を取得して保存（各エージェントの判断前に一度だけ実行）
         try:
-            balance = bybit_trader.get_balance()
-            print(f"Balance response from get_balance: {balance}")
+            balance = gateio_trader.get_balance()
             if "error" not in balance:
                 try:
-                    coin_list = balance.get("list", [])
-                    print(f"Coin list from balance: {coin_list}")
+                    coin_list = balance.get("result", {}).get("list", [])
                     if coin_list:
                         coins = coin_list[0].get("coin", [])
                         usdt_balance = 0.0
                         btc_balance = 0.0
                         
                         for coin in coins:
-                            coin_type = coin.get("coin", "")
-                            # UNIFIEDアカウントではavailableToWithdrawが空の場合があるので、
-                            # walletBalanceまたはequityを使用
-                            available_to_withdraw = coin.get("availableToWithdraw", "")
-                            wallet_balance = coin.get("walletBalance", "")
-                            equity = coin.get("equity", "")
-                            
-                            # 空文字列でない最初の値を使用
-                            available_str = available_to_withdraw or wallet_balance or equity or "0"
-                            available = float(available_str) if available_str else 0.0
-                            
-                            print(f"Coin: {coin_type}, availableToWithdraw: {available_to_withdraw}, walletBalance: {wallet_balance}, equity: {equity}, final: {available}")
+                            # Gate.ioの残高レスポンス形式に対応
+                            coin_type = coin.get("currency", coin.get("coin", ""))
+                            # Gate.ioは"available"フィールドを使用
+                            available = float(coin.get("available", coin.get("availableToWithdraw", "0")) or "0")
                             
                             if coin_type == "USDT":
                                 usdt_balance = available
@@ -187,7 +175,7 @@ def lambda_handler(event, context):
                 
                 if decision.action != Action.HOLD and decision.confidence >= min_confidence:
                     # 残高チェック（注文実行前に再取得）
-                    balance = bybit_trader.get_balance()
+                    balance = gateio_trader.get_balance()
                     can_trade = False
                     insufficient_funds_reason = None
                     
@@ -195,7 +183,7 @@ def lambda_handler(event, context):
                         print(f"Failed to get balance: {balance.get('error')}")
                         insufficient_funds_reason = f"Balance check failed: {balance.get('error')}"
                     else:
-                        # Bybit APIの残高レスポンス構造を解析
+                        # Gate.io APIの残高レスポンス構造を解析
                         # result.list[0].coin[] に各コインの残高が含まれる
                         try:
                             coin_list = balance.get("result", {}).get("list", [])
@@ -205,8 +193,10 @@ def lambda_handler(event, context):
                                 btc_balance = 0.0
                                 
                                 for coin in coins:
-                                    coin_type = coin.get("coin", "")
-                                    available = float(coin.get("availableToWithdraw", "0") or "0")
+                                    # Gate.ioの残高レスポンス形式に対応
+                                    coin_type = coin.get("currency", coin.get("coin", ""))
+                                    # Gate.ioは"available"フィールドを使用
+                                    available = float(coin.get("available", coin.get("availableToWithdraw", "0")) or "0")
                                     
                                     if coin_type == "USDT":
                                         usdt_balance = available
@@ -243,7 +233,7 @@ def lambda_handler(event, context):
                     
                     try:
                         # 注文を実行（成行注文）
-                        order = bybit_trader.execute_order(
+                        order = gateio_trader.execute_order(
                             action=decision.action,
                             amount=order_amount_btc,
                             price=None  # Noneで成行注文
@@ -284,7 +274,7 @@ def lambda_handler(event, context):
                             'amount': order_amount_btc,
                             'price': decision.price,
                             'status': OrderStatus.FAILED.value,
-                            'trader_id': bybit_trader.trader_id,
+                            'trader_id': gateio_trader.trader_id,
                             'error_message': str(e)
                         }
                         db_client.put_order(failed_order)

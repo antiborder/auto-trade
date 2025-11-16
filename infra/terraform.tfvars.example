@@ -1,7 +1,6 @@
-# Bybit API Credentials
+# Gate.io API Credentials
 # Copy this file to terraform.tfvars and fill in your actual values
 # terraform.tfvars is in .gitignore and will NOT be committed to Git
 
-bybit_api_key    = "YOUR_BYBIT_API_KEY_HERE"
-bybit_api_secret = "YOUR_BYBIT_API_SECRET_HERE"
-bybit_testnet    = true  # Set to false for production
+gateio_api_key    = "YOUR_GATEIO_API_KEY_HERE"
+gateio_api_secret = "YOUR_GATEIO_API_SECRET_HERE"
