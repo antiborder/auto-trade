@@ -2,5 +2,10 @@
 # Copy this file to terraform.tfvars and fill in your actual values
 # terraform.tfvars is in .gitignore and will NOT be committed to Git
 
-gateio_api_key    = "YOUR_GATEIO_API_KEY_HERE"
-gateio_api_secret = "YOUR_GATEIO_API_SECRET_HERE"
+# Gate.io Testnet API Credentials (for testing)
+gateio_test_api_key    = "YOUR_GATEIO_TESTNET_API_KEY_HERE"
+gateio_test_api_secret = "YOUR_GATEIO_TESTNET_API_SECRET_HERE"
+
+# Gate.io Production API Credentials (for live trading - not yet implemented)
+gateio_api_key    = "YOUR_GATEIO_PRODUCTION_API_KEY_HERE"
+gateio_api_secret = "YOUR_GATEIO_PRODUCTION_API_SECRET_HERE"

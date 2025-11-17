@@ -18,7 +18,7 @@ from shared.agents.base_agent import BaseAgent
 from shared.agents.simple_agent import SimpleAgent
 from shared.agents.lstm_agent import LSTMAgent
 from shared.models.trading import PriceData, TradingDecision, Action, OrderStatus
-from shared.traders.gateio_trader import GateIOTrader
+from shared.traders.gateio_trader import GateIOTestTrader
 
 # DynamoDBクライアント
 db_client = DynamoDBClient()
@@ -80,19 +80,19 @@ def lambda_handler(event, context):
                 ]
             }
         
-        # Gate.ioから価格データを取得
-        gateio_api_key = os.getenv('GATEIO_API_KEY')
-        gateio_api_secret = os.getenv('GATEIO_API_SECRET')
+        # Gate.io Testnetから価格データを取得
+        gateio_test_api_key = os.getenv('GATEIO_TEST_API_KEY')
+        gateio_test_api_secret = os.getenv('GATEIO_TEST_API_SECRET')
         
         # デバッグ: 環境変数の存在を確認（値は出力しない）
-        print(f"GATEIO_API_KEY exists: {gateio_api_key is not None and len(gateio_api_key) > 0}")
-        print(f"GATEIO_API_SECRET exists: {gateio_api_secret is not None and len(gateio_api_secret) > 0}")
+        print(f"GATEIO_TEST_API_KEY exists: {gateio_test_api_key is not None and len(gateio_test_api_key) > 0}")
+        print(f"GATEIO_TEST_API_SECRET exists: {gateio_test_api_secret is not None and len(gateio_test_api_secret) > 0}")
         
-        # Gate.io traderを作成（Testnet APIキーを使用）
-        gateio_trader = GateIOTrader(
-            trader_id='gateio-trader-1',
-            api_key=gateio_api_key,
-            api_secret=gateio_api_secret,
+        # Gate.io Testnet traderを作成（Testnet APIキーを使用）
+        gateio_trader = GateIOTestTrader(
+            trader_id='gateio-test-trader-1',
+            api_key=gateio_test_api_key,
+            api_secret=gateio_test_api_secret,
             testnet=True  # Testnet APIキーを使用
         )
         

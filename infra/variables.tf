@@ -29,14 +29,28 @@ variable "lambda_memory_size" {
 }
 
 variable "gateio_api_key" {
-  description = "Gate.io API Key (optional, for trading agent)"
+  description = "Gate.io API Key for production (optional, for trading agent)"
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "gateio_api_secret" {
-  description = "Gate.io API Secret (optional, for trading agent)"
+  description = "Gate.io API Secret for production (optional, for trading agent)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "gateio_test_api_key" {
+  description = "Gate.io Testnet API Key (optional, for trading agent)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "gateio_test_api_secret" {
+  description = "Gate.io Testnet API Secret (optional, for trading agent)"
   type        = string
   default     = ""
   sensitive   = true

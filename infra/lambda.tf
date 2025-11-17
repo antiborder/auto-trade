@@ -134,9 +134,9 @@ resource "aws_lambda_function" "trading_agent" {
       ORDERS_TABLE      = aws_dynamodb_table.orders.name
       PERFORMANCE_TABLE = aws_dynamodb_table.performance.name
       BALANCE_TABLE     = aws_dynamodb_table.balance.name
-      GATEIO_API_KEY    = var.gateio_api_key
-      GATEIO_API_SECRET = var.gateio_api_secret
-      GATEIO_TESTNET    = "true"
+      GATEIO_TEST_API_KEY    = var.gateio_test_api_key
+      GATEIO_TEST_API_SECRET = var.gateio_test_api_secret
+      GATEIO_TESTNET         = "true"
     }
   }
 
