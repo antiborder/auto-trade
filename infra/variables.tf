@@ -56,4 +56,18 @@ variable "gateio_test_api_secret" {
   sensitive   = true
 }
 
+variable "gateio_live_api_key" {
+  description = "Gate.io Live API Key (optional, for trading agent)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "gateio_live_api_secret" {
+  description = "Gate.io Live API Secret (optional, for trading agent)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 

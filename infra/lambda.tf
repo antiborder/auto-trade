@@ -136,6 +136,8 @@ resource "aws_lambda_function" "trading_agent" {
       BALANCE_TABLE     = aws_dynamodb_table.balance.name
       GATEIO_TEST_API_KEY    = var.gateio_test_api_key
       GATEIO_TEST_API_SECRET = var.gateio_test_api_secret
+      GATEIO_LIVE_API_KEY    = var.gateio_live_api_key
+      GATEIO_LIVE_API_SECRET = var.gateio_live_api_secret
       GATEIO_TESTNET         = "true"
     }
   }

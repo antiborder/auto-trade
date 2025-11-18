@@ -196,17 +196,26 @@ class GateIOTestTrader(BaseTrader):
             url = f"{self.base_url}/spot/orders"
             
             # 注文パラメータ
+            # amountを固定小数点形式でフォーマット（科学記法を避ける）
+            amount_str = f"{amount:.8f}".rstrip('0').rstrip('.')
             order_data = {
                 "currency_pair": symbol,
                 "side": "buy" if action == Action.BUY else "sell",
-                "amount": str(amount),
+                "amount": amount_str,
             }
             
             if price:
-                order_data["price"] = str(price)
+                # priceも固定小数点形式でフォーマット
+                price_str = f"{price:.2f}".rstrip('0').rstrip('.')
+                order_data["price"] = price_str
                 order_data["type"] = "limit"
+                # 指値注文の場合、TimeInForceを設定（デフォルトはgtc）
+                order_data["time_in_force"] = "gtc"
             else:
                 order_data["type"] = "market"
+                # 成行注文の場合、time_in_forceはiocまたはfokのみサポート（gtcは不可）
+                # ioc: ImmediateOrCancelled, taker only
+                order_data["time_in_force"] = "ioc"
             
             # 注文データをJSON文字列に変換（署名生成用）
             payload_string = json.dumps(order_data)
@@ -505,20 +514,30 @@ class GateIOLiveTrader(BaseTrader):
             url = f"{self.base_url}/spot/orders"
             
             # 注文パラメータ
+            # amountを固定小数点形式でフォーマット（科学記法を避ける）
+            amount_str = f"{amount:.8f}".rstrip('0').rstrip('.')
             order_data = {
                 "currency_pair": symbol,
                 "side": "buy" if action == Action.BUY else "sell",
-                "amount": str(amount),
+                "amount": amount_str,
             }
             
             if price:
-                order_data["price"] = str(price)
+                # priceも固定小数点形式でフォーマット
+                price_str = f"{price:.2f}".rstrip('0').rstrip('.')
+                order_data["price"] = price_str
                 order_data["type"] = "limit"
+                # 指値注文の場合、TimeInForceを設定（デフォルトはgtc）
+                order_data["time_in_force"] = "gtc"
             else:
                 order_data["type"] = "market"
+                # 成行注文の場合、time_in_forceはiocまたはfokのみサポート（gtcは不可）
+                # ioc: ImmediateOrCancelled, taker only
+                order_data["time_in_force"] = "ioc"
             
             # 注文データをJSON文字列に変換（署名生成用）
             payload_string = json.dumps(order_data)
+            print(f"Order payload: {payload_string}")  # デバッグ用
             query_string = ""
             
             # 署名を生成（payloadはJSON文字列）
@@ -527,8 +546,12 @@ class GateIOLiveTrader(BaseTrader):
             
             # リクエストボディはJSON文字列として送信
             response = requests.post(url, data=payload_string, headers=headers, timeout=10)
+            print(f"Order response status: {response.status_code}")
+            if response.status_code != 200:
+                print(f"Order response body: {response.text[:500]}")
             response.raise_for_status()
             data = response.json()
+            print(f"Order response data: {data}")
             
             if "id" in data:
                 order_id = data.get("id", f"{self.trader_id}_{datetime.utcnow().isoformat()}")
@@ -556,6 +579,7 @@ class GateIOLiveTrader(BaseTrader):
                 )
             else:
                 error_msg = data.get("label", "Unknown error")
+                print(f"Order failed - no 'id' in response. Error: {error_msg}, Full response: {data}")
                 return Order(
                     order_id=f"{self.trader_id}_{datetime.utcnow().isoformat()}",
                     agent_id="",
@@ -569,6 +593,9 @@ class GateIOLiveTrader(BaseTrader):
                 )
                 
         except Exception as e:
+            print(f"Exception in execute_order: {str(e)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             return Order(
                 order_id=f"{self.trader_id}_{datetime.utcnow().isoformat()}",
                 agent_id="",
