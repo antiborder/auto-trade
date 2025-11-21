@@ -94,3 +94,6 @@ lambda_layers/
 
 # Docker build artifacts (if any)
 *.dockerignore
+
+# Large result files
+results/
