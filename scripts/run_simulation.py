@@ -12,7 +12,7 @@ import json
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from shared.agents.simple_agent import SimpleAgent
+from shared.agents.ma_agent import MaAgent
 from shared.models.trading import PriceData
 from simulation.engine.simulator import TradingSimulator
 
@@ -94,14 +94,14 @@ def run_simple_agent_simulation(
     print(f"最終価格: ${price_data[-1].price:.2f}")
     print()
     
-    # SimpleAgentを作成
-    print(f"SimpleAgentを作成しています...")
+    # MaAgentを作成
+    print(f"MaAgentを作成しています...")
     print(f"  エージェントID: {agent_id}")
     print(f"  短期移動平均: {short_window}")
     print(f"  長期移動平均: {long_window}")
     print()
     
-    agent = SimpleAgent(
+    agent = MaAgent(
         agent_id=agent_id,
         short_window=short_window,
         long_window=long_window

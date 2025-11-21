@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../simulation/eng
 from dynamodb.client import DynamoDBClient
 from simulator import TradingSimulator
 from agents.base_agent import BaseAgent
-from agents.simple_agent import SimpleAgent
+from agents.ma_agent import MaAgent
 from agents.lstm_agent import LSTMAgent
 from models.trading import PriceData
 
@@ -25,8 +25,8 @@ def create_agent_from_config(agent_config: dict) -> Optional[BaseAgent]:
     agent_type = agent_config.get('type')
     agent_id = agent_config.get('id')
     
-    if agent_type == 'SimpleMA':
-        return SimpleAgent(
+    if agent_type == 'SimpleMA' or agent_type == 'MA':
+        return MaAgent(
             agent_id=agent_id,
             short_window=agent_config.get('short_window', 5),
             long_window=agent_config.get('long_window', 20)

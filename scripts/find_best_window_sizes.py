@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SimpleAgentの最適な移動平均ウィンドウサイズを探索するスクリプト
+MaAgentの最適な移動平均ウィンドウサイズを探索するスクリプト
 様々なshort_windowとlong_windowの組み合わせをテストして最適なパラメータを見つける
 """
 import sys
@@ -15,7 +15,7 @@ import itertools
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from shared.agents.simple_agent import SimpleAgent
+from shared.agents.ma_agent import MaAgent
 from shared.models.trading import PriceData, Action, TradingDecision, Order, OrderStatus
 from simulation.engine.simulator import TradingSimulator
 
@@ -130,7 +130,7 @@ def run_single_simulation(
         シミュレーション結果の辞書
     """
     # エージェント作成
-    agent = SimpleAgent(
+    agent = MaAgent(
         agent_id=agent_id,
         short_window=short_window,
         long_window=long_window
@@ -218,7 +218,7 @@ def find_best_window_sizes(
     best_result = None
     
     for idx, (short, long_w, lookback) in enumerate(valid_combinations, 1):
-        agent_id = f"simple_agent_{short}_{long_w}"
+        agent_id = f"ma_agent_{short}_{long_w}"
         
         try:
             result = run_single_simulation(
@@ -310,7 +310,7 @@ def find_best_window_sizes(
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="SimpleAgentの最適なウィンドウサイズを探索")
+    parser = argparse.ArgumentParser(description="MaAgentの最適なウィンドウサイズを探索")
     parser.add_argument(
         "--csv",
         type=str,

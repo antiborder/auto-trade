@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import boto3
 from shared.dynamodb.client import DynamoDBClient
 from shared.agents.base_agent import BaseAgent
-from shared.agents.simple_agent import SimpleAgent
+from shared.agents.ma_agent import MaAgent
 from shared.agents.lstm_agent import LSTMAgent
 from shared.models.trading import PriceData, TradingDecision, Action, OrderStatus
 from shared.traders.gateio_trader import GateIOTestTrader, GateIOLiveTrader
@@ -32,8 +32,8 @@ def create_agents(config: dict) -> dict[str, BaseAgent]:
         agent_type = agent_config.get('type')
         agent_id = agent_config.get('id')
         
-        if agent_type == 'SimpleMA':
-            agents[agent_id] = SimpleAgent(
+        if agent_type == 'SimpleMA' or agent_type == 'MA':
+            agents[agent_id] = MaAgent(
                 agent_id=agent_id,
                 trader_id=agent_config.get('trader_id'),
                 short_window=agent_config.get('short_window', 5),

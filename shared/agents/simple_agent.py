@@ -1,13 +1,13 @@
 """
-シンプルな取引エージェント（例）
+移動平均ベースの取引エージェント
 """
 from datetime import datetime
 from shared.agents.base_agent import BaseAgent
 from shared.models.trading import Action, PriceData, TradingDecision
 
 
-class SimpleAgent(BaseAgent):
-    """シンプルな移動平均ベースのエージェント"""
+class MaAgent(BaseAgent):
+    """移動平均クロスオーバー戦略のエージェント"""
     
     def __init__(self, agent_id: str, trader_id: str = None, short_window: int = 5, long_window: int = 20):
         super().__init__(agent_id, trader_id)
@@ -55,6 +55,6 @@ class SimpleAgent(BaseAgent):
         )
     
     def get_agent_type(self) -> str:
-        return "SimpleMA"
+        return "MA"
 
 
