@@ -110,20 +110,9 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
     current_date = start
     limit = 1000  # 1回あたりの最大件数
     
-    # 間隔に応じて時間差を計算
-    interval_map = {
-        "1m": timedelta(minutes=1),
-        "5m": timedelta(minutes=5),
-        "15m": timedelta(minutes=15),
-        "1h": timedelta(hours=1),
-        "4h": timedelta(hours=4),
-        "1d": timedelta(days=1)
-    }
-    time_delta = interval_map.get(interval, timedelta(hours=1))
-    
     while current_date < end:
-        # 次の1000件分の終了日を計算
-        batch_end = min(current_date + time_delta * (limit - 1), end)
+        # 次の1000件分の終了日を計算（1時間ごとのデータなので1000時間後）
+        batch_end = min(current_date + timedelta(hours=limit - 1), end)
         
         start_timestamp = int(current_date.timestamp() * 1000)  # ミリ秒
         end_timestamp = int(batch_end.timestamp() * 1000)
@@ -165,7 +154,7 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
         # 次のバッチの開始日を設定（最後のタイムスタンプの次）
         if data:
             last_timestamp_ms = int(data[-1][0])
-            current_date = datetime.fromtimestamp(last_timestamp_ms / 1000) + time_delta
+            current_date = datetime.fromtimestamp(last_timestamp_ms / 1000) + timedelta(hours=1)
         else:
             current_date = batch_end
     
@@ -217,12 +206,6 @@ if __name__ == "__main__":
         default="binance",
         help="使用するAPI（デフォルト: binance）"
     )
-    parser.add_argument(
-        "--interval",
-        type=str,
-        default="1h",
-        help="データ間隔（Binance: 1m, 5m, 15m, 1h, 4h, 1d など、デフォルト: 1h）"
-    )
     
     args = parser.parse_args()
     
@@ -237,7 +220,7 @@ if __name__ == "__main__":
     
     # データを取得
     if args.api == "binance":
-        data = fetch_historical_prices_binance(args.start_date, args.end_date, interval=args.interval)
+        data = fetch_historical_prices_binance(args.start_date, args.end_date, interval="1h")
     else:
         data = fetch_historical_prices_coingecko(args.start_date, args.end_date, interval="hourly")
     
