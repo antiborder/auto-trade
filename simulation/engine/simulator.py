@@ -174,9 +174,19 @@ class TradingSimulator:
             # エージェントで判断
             decision = agent.decide(current_price_data, historical_data)
             
-            # エージェントがMaAgentWithStopLossの場合、ポジション情報を更新
+            # エージェントが損失確定やトレーリングストップロス機能を持つ場合、ポジション情報を更新
             if hasattr(agent, 'update_position'):
-                agent.update_position(self.entry_price, self.btc_holdings)
+                # update_positionのシグネチャを確認
+                import inspect
+                sig = inspect.signature(agent.update_position)
+                params = list(sig.parameters.keys())
+                
+                if len(params) >= 3 and 'current_price' in params:
+                    # トレーリングストップロス対応版（current_priceを渡す）
+                    agent.update_position(self.entry_price, self.btc_holdings, current_price_data.price)
+                else:
+                    # 通常版
+                    agent.update_position(self.entry_price, self.btc_holdings)
             
             # 取引実行
             order = self.execute_trade(decision, current_price_data.price)
