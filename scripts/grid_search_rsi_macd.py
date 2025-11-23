@@ -6,10 +6,11 @@ RSI+MACDエージェントのグリッドサーチ
 import sys
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from typing import List, Dict, Tuple, Optional
 import itertools
+import time
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -67,7 +68,7 @@ class FullPositionSimulator(TradingSimulator):
             return None
         
         order = Order(
-            order_id=f"sim_{datetime.utcnow().isoformat()}",
+            order_id=f"sim_{datetime.now(timezone.utc).isoformat()}",
             agent_id=decision.agent_id,
             action=decision.action,
             amount=btc_amount,
@@ -203,7 +204,8 @@ def grid_search(
     stop_loss_percentages: Optional[List[float]] = None,
     trailing_stop_percentages: Optional[List[float]] = None,
     initial_balance: float = 10000.0,
-    min_lookback: int = 100
+    min_lookback: int = 100,
+    log_file: Optional[str] = None
 ):
     """
     グリッドサーチを実行
@@ -283,6 +285,43 @@ def grid_search(
     best_profit_pct = float('-inf')
     best_result = None
     
+    # ログファイルの設定
+    log_path = None
+    if log_file:
+        log_path = log_file if os.path.isabs(log_file) else os.path.join(project_root, log_file)
+        # ログファイルのディレクトリを作成
+        log_dir = os.path.dirname(log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+    
+    # 開始時間と最後のログ時間を記録
+    start_time = time.time()
+    last_log_time = start_time
+    log_interval = 300  # 5分 = 300秒
+    
+    def write_log(message: str):
+        """ログをファイルとコンソールに書き込む"""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        log_message = f"[{timestamp}] {message}"
+        print(log_message)
+        if log_path:
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(log_message + '\n')
+    
+    # 初期ログ
+    if log_path:
+        write_log(f"Grid search started")
+        write_log(f"Total combinations to test: {total_combinations}")
+        write_log(f"RSI periods: {rsi_periods}")
+        write_log(f"RSI oversold levels: {rsi_oversold_levels}")
+        write_log(f"RSI overbought levels: {rsi_overbought_levels}")
+        write_log(f"MACD Fast periods: {macd_fast_periods}")
+        write_log(f"MACD Slow periods: {macd_slow_periods}")
+        write_log(f"MACD Signal periods: {macd_signal_periods}")
+        write_log(f"Data points: {len(price_data)}")
+        write_log(f"Log file: {log_path}")
+        write_log("-" * 80)
+    
     for idx, (rsi_p, rsi_os, rsi_ob, macd_f, macd_s, macd_sig, stop_loss, trailing, lookback) in enumerate(valid_combinations, 1):
         stop_loss_str = f"sl{int(stop_loss*100)}pct" if stop_loss else "nosl"
         trailing_str = f"ts{int(trailing*100)}pct" if trailing else "nots"
@@ -314,15 +353,61 @@ def grid_search(
             # 進捗表示（5%ごと）
             if idx % max(1, total_combinations // 20) == 0 or idx == total_combinations:
                 progress = (idx / total_combinations) * 100
-                sl_str = f"{best_result['stop_loss_percentage']*100:.0f}%" if best_result.get('stop_loss_percentage') else "なし"
-                ts_str = f"{best_result['trailing_stop_percentage']*100:.0f}%" if best_result.get('trailing_stop_percentage') else "なし"
-                print(f"進捗: {idx}/{total_combinations} ({progress:.1f}%) - "
-                      f"現在の最良: {best_profit_pct:.2f}% "
-                      f"(RSI={best_result['rsi_period']}, MACD={best_result['macd_fast']}/{best_result['macd_slow']}, "
-                      f"SL={sl_str}, TS={ts_str})")
+                if best_result:
+                    sl_str = f"{best_result['stop_loss_percentage']*100:.0f}%" if best_result.get('stop_loss_percentage') else "なし"
+                    ts_str = f"{best_result['trailing_stop_percentage']*100:.0f}%" if best_result.get('trailing_stop_percentage') else "なし"
+                    print(f"進捗: {idx}/{total_combinations} ({progress:.1f}%) - "
+                          f"現在の最良: {best_profit_pct:.2f}% "
+                          f"(RSI={best_result['rsi_period']}, MACD={best_result['macd_fast']}/{best_result['macd_slow']}, "
+                          f"SL={sl_str}, TS={ts_str})")
+                else:
+                    print(f"進捗: {idx}/{total_combinations} ({progress:.1f}%) - まだ結果なし")
+            
+            # 5分ごとのログ出力
+            current_time = time.time()
+            if current_time - last_log_time >= log_interval:
+                elapsed_time = current_time - start_time
+                progress_pct = (idx / total_combinations) * 100
+                
+                # 残り時間の推定
+                if idx > 0:
+                    avg_time_per_combination = elapsed_time / idx
+                    remaining_combinations = total_combinations - idx
+                    estimated_remaining = avg_time_per_combination * remaining_combinations
+                    estimated_remaining_str = f"{int(estimated_remaining // 3600)}h {int((estimated_remaining % 3600) // 60)}m"
+                else:
+                    estimated_remaining_str = "N/A"
+                
+                elapsed_str = f"{int(elapsed_time // 3600)}h {int((elapsed_time % 3600) // 60)}m {int(elapsed_time % 60)}s"
+                
+                # 最良の結果の情報を構築
+                if best_result:
+                    sl_str = f"{best_result['stop_loss_percentage']*100:.0f}%" if best_result.get('stop_loss_percentage') else "なし"
+                    ts_str = f"{best_result['trailing_stop_percentage']*100:.0f}%" if best_result.get('trailing_stop_percentage') else "なし"
+                    best_params_str = (
+                        f"RSI({best_result['rsi_period']}/{best_result['rsi_oversold']:.0f}-{best_result['rsi_overbought']:.0f}), "
+                        f"MACD({best_result['macd_fast']}/{best_result['macd_slow']}/{best_result['macd_signal']}), "
+                        f"SL={sl_str}, TS={ts_str}"
+                    )
+                else:
+                    best_params_str = "None yet"
+                
+                log_msg = (
+                    f"Progress: {idx}/{total_combinations} ({progress_pct:.2f}%) | "
+                    f"Elapsed: {elapsed_str} | "
+                    f"Estimated remaining: {estimated_remaining_str} | "
+                    f"Best profit: {best_profit_pct:.2f}% | "
+                    f"Best params: {best_params_str} | "
+                    f"Completed: {len(results)} simulations"
+                )
+                write_log(log_msg)
+                last_log_time = current_time
         
         except Exception as e:
-            print(f"エラー: RSI={rsi_p}, MACD={macd_f}/{macd_s}/{macd_sig}: {e}")
+            error_msg = f"エラー: RSI={rsi_p}, MACD={macd_f}/{macd_s}/{macd_sig}: {e}"
+            print(error_msg)
+            if log_path:
+                write_log(error_msg)
             continue
     
     # 結果をソート（利益率で降順）
@@ -395,6 +480,19 @@ def grid_search(
         print(f"相対パフォーマンス: {best_result['profit_percentage'] / price_change:.3f}")
         print()
     
+    # 完了ログ
+    if log_path:
+        total_elapsed = time.time() - start_time
+        elapsed_str = f"{int(total_elapsed // 3600)}h {int((total_elapsed % 3600) // 60)}m {int(total_elapsed % 60)}s"
+        write_log("-" * 80)
+        write_log(f"Grid search completed in {elapsed_str}")
+        write_log(f"Total combinations tested: {len(results)}")
+        if best_result:
+            write_log(f"Best profit: {best_result['profit_percentage']:.2f}%")
+            sl_str = f"{best_result['stop_loss_percentage']*100:.0f}%" if best_result.get('stop_loss_percentage') else "なし"
+            ts_str = f"{best_result['trailing_stop_percentage']*100:.0f}%" if best_result.get('trailing_stop_percentage') else "なし"
+            write_log(f"Best parameters: RSI({best_result['rsi_period']}/{best_result['rsi_oversold']:.0f}-{best_result['rsi_overbought']:.0f}), MACD({best_result['macd_fast']}/{best_result['macd_slow']}/{best_result['macd_signal']}), SL={sl_str}, TS={ts_str}")
+    
     return results, best_result
 
 
@@ -424,6 +522,11 @@ if __name__ == "__main__":
         print(f"エラー: CSVファイルが見つかりません: {csv_path}")
         sys.exit(1)
     
+    # ログファイルパスの設定
+    log_file = args.log
+    if log_file and not os.path.isabs(log_file):
+        log_file = os.path.join(project_root, log_file)
+    
     # グリッドサーチ実行
     results, best_result = grid_search(
         csv_path=csv_path,
@@ -435,7 +538,8 @@ if __name__ == "__main__":
         macd_signal_periods=args.macd_signal,
         stop_loss_percentages=args.stop_loss,
         trailing_stop_percentages=args.trailing_stop,
-        initial_balance=args.initial_balance
+        initial_balance=args.initial_balance,
+        log_file=log_file
     )
     
     # 結果をJSONファイルに保存

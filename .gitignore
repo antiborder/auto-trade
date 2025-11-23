@@ -97,3 +97,6 @@ lambda_layers/
 
 # Large result files
 results/
+
+# Cursor
+.cursor/

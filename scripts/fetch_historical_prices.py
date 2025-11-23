@@ -92,13 +92,14 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
     Args:
         start_date: 開始日（YYYY-MM-DD形式）
         end_date: 終了日（YYYY-MM-DD形式）
-        interval: データ間隔（"1h" = 1時間、"1d" = 1日）
+        interval: データ間隔（"15m" = 15分、"1h" = 1時間、"1d" = 1日）
     
     Returns:
         価格データのリスト
     """
     print(f"Binance APIから価格データを取得中...")
     print(f"期間: {start_date} ～ {end_date}")
+    print(f"間隔: {interval}")
     
     BINANCE_API_URL = "https://api.binance.com/api/v3/klines"
     
@@ -110,9 +111,19 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
     current_date = start
     limit = 1000  # 1回あたりの最大件数
     
+    # 間隔に応じて次のバッチの計算方法を変更
+    if interval == "15m":
+        time_delta = timedelta(minutes=15 * (limit - 1))
+    elif interval == "1h":
+        time_delta = timedelta(hours=limit - 1)
+    elif interval == "1d":
+        time_delta = timedelta(days=limit - 1)
+    else:
+        time_delta = timedelta(hours=limit - 1)  # デフォルト
+    
     while current_date < end:
-        # 次の1000件分の終了日を計算（1時間ごとのデータなので1000時間後）
-        batch_end = min(current_date + timedelta(hours=limit - 1), end)
+        # 次の1000件分の終了日を計算
+        batch_end = min(current_date + time_delta, end)
         
         start_timestamp = int(current_date.timestamp() * 1000)  # ミリ秒
         end_timestamp = int(batch_end.timestamp() * 1000)
@@ -132,6 +143,11 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
             response.raise_for_status()
             data = response.json()
             
+            if not data:
+                print(f"  警告: データが取得できませんでした。次のバッチに進みます。")
+                current_date = batch_end
+                continue
+            
             for kline in data:
                 # Binance kline形式: [open_time, open, high, low, close, volume, ...]
                 timestamp_ms = int(kline[0])
@@ -149,12 +165,24 @@ def fetch_historical_prices_binance(start_date: str, end_date: str, interval: st
         except Exception as e:
             print(f"  エラー: {e}")
             time.sleep(2)
+            # エラー時は次のバッチに進む
+            current_date = batch_end
             continue
         
         # 次のバッチの開始日を設定（最後のタイムスタンプの次）
         if data:
             last_timestamp_ms = int(data[-1][0])
-            current_date = datetime.fromtimestamp(last_timestamp_ms / 1000) + timedelta(hours=1)
+            last_timestamp = datetime.fromtimestamp(last_timestamp_ms / 1000)
+            
+            # 間隔に応じて次の開始時刻を計算
+            if interval == "15m":
+                current_date = last_timestamp + timedelta(minutes=15)
+            elif interval == "1h":
+                current_date = last_timestamp + timedelta(hours=1)
+            elif interval == "1d":
+                current_date = last_timestamp + timedelta(days=1)
+            else:
+                current_date = last_timestamp + timedelta(hours=1)
         else:
             current_date = batch_end
     
@@ -206,6 +234,13 @@ if __name__ == "__main__":
         default="binance",
         help="使用するAPI（デフォルト: binance）"
     )
+    parser.add_argument(
+        "--interval",
+        type=str,
+        default="1h",
+        choices=["15m", "1h", "4h", "1d"],
+        help="データ間隔（15m=15分、1h=1時間、4h=4時間、1d=1日、デフォルト: 1h）"
+    )
     
     args = parser.parse_args()
     
@@ -220,8 +255,9 @@ if __name__ == "__main__":
     
     # データを取得
     if args.api == "binance":
-        data = fetch_historical_prices_binance(args.start_date, args.end_date, interval="1h")
+        data = fetch_historical_prices_binance(args.start_date, args.end_date, interval=args.interval)
     else:
+        # CoinGeckoは間隔オプションをサポートしていないため、hourlyのみ
         data = fetch_historical_prices_coingecko(args.start_date, args.end_date, interval="hourly")
     
     if not data:
