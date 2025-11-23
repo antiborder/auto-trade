@@ -14,7 +14,28 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    let isPageVisible = true
+
+    // Stop polling when page is hidden to reduce costs
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden
+      if (isPageVisible && !interval) {
+        // Restart polling when page becomes visible
+        interval = setInterval(fetchData, 900000) // 15 minutes
+      } else if (!isPageVisible && interval) {
+        // Stop polling when page is hidden
+        clearInterval(interval)
+        interval = null
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     async function fetchData() {
+      // Only fetch if page is visible
+      if (!isPageVisible) return
+
       setLoading(true)
       setError(null)
       try {
@@ -35,10 +56,20 @@ export default function Home() {
       }
     }
 
+    // Initial fetch
     fetchData()
-    const interval = setInterval(fetchData, 60000) // 1分ごとに更新
+    
+    // Start polling only if page is visible
+    if (isPageVisible) {
+      interval = setInterval(fetchData, 900000) // 15分ごとに更新
+    }
 
-    return () => clearInterval(interval)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
   }, [])
 
   if (loading) {

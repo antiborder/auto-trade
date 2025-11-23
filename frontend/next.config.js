@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverActions: true,
-  },
   env: {
     AWS_REGION: process.env.AWS_REGION || 'ap-northeast-1',
     PRICES_TABLE: process.env.PRICES_TABLE || 'btc-prices',

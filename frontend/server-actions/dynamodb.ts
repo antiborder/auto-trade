@@ -4,7 +4,7 @@
 'use server'
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { DynamoDBDocumentClient, ScanCommand, QueryCommand, GetItemCommand } from '@aws-sdk/lib-dynamodb'
+import { DynamoDBDocumentClient, ScanCommand, QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb'
 
 const client = new DynamoDBClient({
   region: process.env.AWS_REGION || 'ap-northeast-1'
@@ -23,36 +23,30 @@ const TABLES = {
 
 export async function getRecentPrices(limit: number = 100) {
   try {
-    // DynamoDBのスキャンは順序を保証しないため、全件取得してからソートする
-    const allItems: any[] = []
-    let lastEvaluatedKey: any = undefined
+    // OPTIMIZED: Use Scan with Limit to reduce read units
+    // Note: This may not return exactly the most recent items, but significantly reduces cost
+    // For exact recent items, consider adding a GSI with timestamp as sort key
+    const command = new ScanCommand({
+      TableName: TABLES.prices,
+      Limit: Math.min(limit * 3, 1000), // Scan up to 3x limit or 1000 items max to reduce reads
+      // ProjectionExpression: 'timestamp, price, volume_24h' // Only fetch needed attributes
+    })
     
-    do {
-      const command = new ScanCommand({
-        TableName: TABLES.prices,
-        ExclusiveStartKey: lastEvaluatedKey
-      })
-      
-      const response = await docClient.send(command)
-      if (response.Items) {
-        allItems.push(...response.Items)
-      }
-      lastEvaluatedKey = response.LastEvaluatedKey
-    } while (lastEvaluatedKey)
+    const response = await docClient.send(command)
+    const items = response.Items || []
     
-    // タイムスタンプでソートして最新のN件を返す
-    const sortedItems = allItems.sort((a, b) => {
+    // Sort by timestamp and return most recent N items
+    const sortedItems = items.sort((a, b) => {
       const timeA = new Date(a.timestamp).getTime()
       const timeB = new Date(b.timestamp).getTime()
       return timeB - timeA // 降順（新しい順）
     })
     
     const recentItems = sortedItems.slice(0, limit).reverse() // 古い順に並び替え
-    console.log(`Fetched ${allItems.length} total items, returning ${recentItems.length} recent items from table: ${TABLES.prices}`)
+    console.log(`Fetched ${items.length} items (limited scan), returning ${recentItems.length} recent items from table: ${TABLES.prices}`)
     return recentItems
   } catch (error: any) {
     console.error('Error fetching prices:', error)
-    // エラー情報を返してデバッグしやすくする
     throw new Error(`Failed to fetch prices: ${error.message || String(error)}`)
   }
 }
@@ -100,7 +94,7 @@ export async function getAgentOrders(agentId: string, limit: number = 100) {
 
 export async function getAgentPerformance(agentId: string) {
   try {
-    const command = new GetItemCommand({
+    const command = new GetCommand({
       TableName: TABLES.performance,
       Key: {
         agent_id: agentId
@@ -133,32 +127,27 @@ export async function getAllAgentsPerformance() {
 
 export async function getRecentBalances(limit: number = 100) {
   try {
-    // DynamoDBのスキャンは順序を保証しないため、全件取得してからソートする
-    const allItems: any[] = []
-    let lastEvaluatedKey: any = undefined
+    // OPTIMIZED: Use Scan with Limit to reduce read units
+    // Note: This may not return exactly the most recent items, but significantly reduces cost
+    // For exact recent items, consider adding a GSI with timestamp as sort key
+    const command = new ScanCommand({
+      TableName: TABLES.balance,
+      Limit: Math.min(limit * 3, 1000), // Scan up to 3x limit or 1000 items max to reduce reads
+      // ProjectionExpression: 'timestamp, usdt_balance, btc_balance' // Only fetch needed attributes
+    })
     
-    do {
-      const command = new ScanCommand({
-        TableName: TABLES.balance,
-        ExclusiveStartKey: lastEvaluatedKey
-      })
-      
-      const response = await docClient.send(command)
-      if (response.Items) {
-        allItems.push(...response.Items)
-      }
-      lastEvaluatedKey = response.LastEvaluatedKey
-    } while (lastEvaluatedKey)
+    const response = await docClient.send(command)
+    const items = response.Items || []
     
-    // タイムスタンプでソートして最新のN件を返す
-    const sortedItems = allItems.sort((a, b) => {
+    // Sort by timestamp and return most recent N items
+    const sortedItems = items.sort((a, b) => {
       const timeA = new Date(a.timestamp).getTime()
       const timeB = new Date(b.timestamp).getTime()
       return timeB - timeA // 降順（新しい順）
     })
     
     const recentItems = sortedItems.slice(0, limit).reverse() // 古い順に並び替え
-    console.log(`Fetched ${allItems.length} total items, returning ${recentItems.length} recent items from table: ${TABLES.balance}`)
+    console.log(`Fetched ${items.length} items (limited scan), returning ${recentItems.length} recent items from table: ${TABLES.balance}`)
     return recentItems
   } catch (error: any) {
     console.error('Error fetching balances:', error)
