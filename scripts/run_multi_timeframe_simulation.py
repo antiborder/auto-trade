@@ -8,7 +8,6 @@ import os
 import csv
 import argparse
 import time
-import bisect
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
@@ -16,73 +15,11 @@ from typing import List, Dict, Optional
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from shared.agents.multi_timeframe_agent import MultiTimeframeAgent
-from shared.models.trading import PriceData, Action, TradingDecision, Order, OrderStatus
-from simulation.engine.simulator import TradingSimulator
-
-
-class FullPositionSimulator(TradingSimulator):
-    """全額取引シミュレーター（買いは全残高、売りは全BTC保有量を使用）"""
-    
-    def execute_trade(self, decision: TradingDecision, current_price: float, fee_rate: float = 0.001) -> Optional[Order]:
-        """取引をシミュレート（全額取引版）"""
-        if decision.action == Action.HOLD:
-            return None
-        
-        # 注文数量を計算（全額使用）
-        if decision.action == Action.BUY:
-            # 買い: 全残高を使用
-            if self.balance <= 0:
-                return None
-            
-            order_amount_usd = self.balance / (1 + fee_rate)
-            btc_amount = order_amount_usd / current_price
-            fee = order_amount_usd * fee_rate
-            
-            self.balance = 0
-            self.btc_holdings += btc_amount
-            
-            # エントリー価格を更新（損失確定用）
-            if self.entry_price is None:
-                self.entry_price = current_price
-            else:
-                total_btc = self.btc_holdings
-                old_btc = self.btc_holdings - btc_amount
-                if total_btc > 0:
-                    self.entry_price = (old_btc * self.entry_price + btc_amount * current_price) / total_btc
-            
-        elif decision.action == Action.SELL:
-            # 売り: 全BTC保有量を売却
-            if self.btc_holdings <= 0:
-                return None
-            
-            btc_amount = self.btc_holdings
-            order_amount_usd = btc_amount * current_price
-            fee = order_amount_usd * fee_rate
-            
-            self.btc_holdings = 0
-            self.balance += (order_amount_usd - fee)
-            self.entry_price = None
-        else:
-            return None
-        
-        order = Order(
-            order_id=f"sim_{datetime.now(timezone.utc).isoformat()}",
-            agent_id=decision.agent_id,
-            action=decision.action,
-            amount=btc_amount,
-            price=current_price,
-            timestamp=decision.timestamp,
-            status=OrderStatus.EXECUTED,
-            trader_id="simulator",
-            execution_price=current_price,
-            execution_timestamp=decision.timestamp
-        )
-        
-        self.trades.append(order)
-        self.decisions.append(decision)
-        
-        return order
+from shared.models.trading import PriceData
+from simulation.engine.multi_timeframe_simulator import (
+    align_timeframes,
+    MultiTimeframeSimulator
+)
 
 
 def load_price_data_from_csv(csv_path: str) -> List[PriceData]:
@@ -117,50 +54,6 @@ def load_price_data_from_csv(csv_path: str) -> List[PriceData]:
     return price_data
 
 
-def align_timeframes(
-    data_15m: List[PriceData],
-    data_1h: List[PriceData],
-    progress_callback=None
-) -> List[tuple]:
-    """
-    15分足データと1時間足データを時系列で整列（最適化版）
-    各15分足データポイントに対して、対応する1時間足データの履歴を返す
-    
-    Args:
-        data_15m: 15分足データ
-        data_1h: 1時間足データ
-        progress_callback: 進捗コールバック関数（オプション）
-    
-    Returns:
-        List of tuples: (15m_price_data, 1h_index) where 1h_index is the index in sorted 1h data
-    """
-    aligned_data = []
-    
-    # 1時間足データを時系列でソート（一度だけ）
-    data_1h_sorted = sorted(data_1h, key=lambda x: x.timestamp)
-    timestamps_1h = [d.timestamp for d in data_1h_sorted]
-    
-    # 15分足データを時系列でソート
-    data_15m_sorted = sorted(data_15m, key=lambda x: x.timestamp)
-    
-    total = len(data_15m_sorted)
-    last_progress = 0
-    
-    for i, price_15m in enumerate(data_15m_sorted):
-        # バイナリサーチで現在の15分足タイムスタンプ以前の1時間足データのインデックスを取得
-        # bisect_rightは、指定された値以下の最大のインデックス+1を返す
-        idx = bisect.bisect_right(timestamps_1h, price_15m.timestamp)
-        
-        if idx > 0:
-            # インデックスを保存（後で効率的にアクセスするため）
-            aligned_data.append((price_15m, idx))
-        
-        # 進捗表示（10%ごと）
-        if progress_callback and i > 0 and (i * 100 // total) > last_progress:
-            last_progress = i * 100 // total
-            progress_callback(i, total, last_progress)
-    
-    return aligned_data, data_1h_sorted
 
 
 def run_simulation(
@@ -207,40 +100,32 @@ def run_simulation(
         write_log(f"Parameters: RSI({rsi_period}/{rsi_oversold}-{rsi_overbought}) [15m], BB({bb_period}/{bb_num_std_dev}) [15m], MACD({macd_fast}/{macd_slow}/{macd_signal}) [1h]")
         write_log("-" * 80)
     
-    # エージェント作成
-    agent = MultiTimeframeAgent(
-        agent_id=agent_id,
-        rsi_period=rsi_period,
-        rsi_oversold=rsi_oversold,
-        rsi_overbought=rsi_overbought,
-        bb_period=bb_period,
-        bb_num_std_dev=bb_num_std_dev,
-        macd_fast=macd_fast,
-        macd_slow=macd_slow,
-        macd_signal=macd_signal
-    )
-    
     # データ整列（最適化版）
     start_time = time.time()
     write_log("Aligning timeframes...")
     
-    def progress_callback(current, total, percent):
+    def alignment_progress_callback(current, total, percent):
         if percent % 10 == 0:  # 10%ごと
             write_log(f"Alignment progress: {percent}% ({current}/{total})")
     
-    aligned_data, data_1h_sorted = align_timeframes(data_15m, data_1h, progress_callback)
+    aligned_data, data_1h_sorted = align_timeframes(data_15m, data_1h, alignment_progress_callback)
     
     alignment_time = time.time() - start_time
     write_log(f"Data alignment completed: {len(aligned_data)} aligned points in {alignment_time:.2f}s")
     
-    if len(aligned_data) < lookback_window_15m:
-        error_msg = f'Insufficient data: need at least {lookback_window_15m} aligned data points, got {len(aligned_data)}'
+    # シミュレーター作成
+    try:
+        simulator = MultiTimeframeSimulator(
+            aligned_data=aligned_data,
+            data_1h_sorted=data_1h_sorted,
+            initial_balance=initial_balance,
+            lookback_window_15m=lookback_window_15m,
+            lookback_window_1h=lookback_window_1h
+        )
+    except ValueError as e:
+        error_msg = str(e)
         write_log(f"Error: {error_msg}")
         return {'error': error_msg}
-    
-    # シミュレーター初期化
-    simulator = FullPositionSimulator(initial_balance=initial_balance)
-    simulator.reset()
     
     # シミュレーション実行
     total_iterations = len(aligned_data) - lookback_window_15m
@@ -250,89 +135,42 @@ def run_simulation(
     
     write_log(f"Starting simulation: {total_iterations} iterations")
     
-    for i in range(lookback_window_15m, len(aligned_data)):
-        price_15m, idx_1h = aligned_data[i]
-        
-        # 15分足データの履歴を取得（効率的に）
-        historical_15m = [d[0] for d in aligned_data[i-lookback_window_15m:i]]
-        
-        # 1時間足データの履歴を取得（インデックスを使用して効率的に）
-        historical_1h = data_1h_sorted[:idx_1h]
-        historical_1h_window = historical_1h[-lookback_window_1h:] if len(historical_1h) >= lookback_window_1h else historical_1h
-        
-        # エージェントに判断を求める
-        decision = agent.decide(
-            price_data=price_15m,
-            historical_data=historical_15m,
-            historical_data_1h=historical_1h_window
-        )
-        
-        # 取引を実行
-        simulator.execute_trade(decision, price_15m.price)
-        
-        # 進捗ログ（5分ごと、または完了時）
+    def simulation_progress_callback(iteration, total):
+        """進捗ログ（5分ごと、または完了時）"""
+        nonlocal last_log_time
         current_time = time.time()
-        iteration = i - lookback_window_15m + 1
-        if current_time - last_log_time >= log_interval or iteration == total_iterations:
+        if current_time - last_log_time >= log_interval or iteration == total:
             elapsed = current_time - sim_start_time
-            progress = (iteration / total_iterations) * 100
-            estimated_total = (elapsed / iteration) * total_iterations if iteration > 0 else 0
+            progress = (iteration / total) * 100
+            estimated_total = (elapsed / iteration) * total if iteration > 0 else 0
             remaining = estimated_total - elapsed
             
             elapsed_h, elapsed_m = int(elapsed // 3600), int((elapsed % 3600) // 60)
             remaining_h, remaining_m = int(remaining // 3600), int((remaining % 3600) // 60)
             
-            write_log(f"Progress: {iteration}/{total_iterations} ({progress:.1f}%) | "
+            write_log(f"Progress: {iteration}/{total} ({progress:.1f}%) | "
                      f"Elapsed: {elapsed_h}h {elapsed_m}m | "
-                     f"Estimated remaining: {remaining_h}h {remaining_m}m | "
-                     f"Trades: {len(simulator.trades)}")
+                     f"Estimated remaining: {remaining_h}h {remaining_m}m")
             last_log_time = current_time
     
-    # 最終結果を計算
-    final_price = aligned_data[-1][0].price
-    final_value = simulator.balance + (simulator.btc_holdings * final_price)
-    total_profit = final_value - initial_balance
-    profit_percentage = (total_profit / initial_balance) * 100
-    
-    # 取引統計
-    buy_trades = [t for t in simulator.trades if t.action == Action.BUY]
-    sell_trades = [t for t in simulator.trades if t.action == Action.SELL]
+    result = simulator.run_simulation(
+        agent_id=agent_id,
+        rsi_period=rsi_period,
+        rsi_oversold=rsi_oversold,
+        rsi_overbought=rsi_overbought,
+        bb_period=bb_period,
+        bb_num_std_dev=bb_num_std_dev,
+        macd_fast=macd_fast,
+        macd_slow=macd_slow,
+        macd_signal=macd_signal,
+        progress_callback=simulation_progress_callback
+    )
     
     total_time = time.time() - start_time
     write_log(f"Simulation completed in {total_time:.2f}s")
-    write_log(f"Final profit: {profit_percentage:.2f}% | Total trades: {len(simulator.trades)}")
+    write_log(f"Final profit: {result['profit_percentage']:.2f}% | Total trades: {result['total_trades']}")
     
-    return {
-        'initial_balance': initial_balance,
-        'final_balance': simulator.balance,
-        'final_btc_holdings': simulator.btc_holdings,
-        'final_price': final_price,
-        'final_value': final_value,
-        'total_profit': total_profit,
-        'profit_percentage': profit_percentage,
-        'total_trades': len(simulator.trades),
-        'buy_trades': len(buy_trades),
-        'sell_trades': len(sell_trades),
-        'trades': [
-            {
-                'action': t.action.value,
-                'price': t.price,
-                'amount': t.amount,
-                'timestamp': t.timestamp.isoformat()
-            }
-            for t in simulator.trades
-        ],
-        'parameters': {
-            'rsi_period': rsi_period,
-            'rsi_oversold': rsi_oversold,
-            'rsi_overbought': rsi_overbought,
-            'bb_period': bb_period,
-            'bb_num_std_dev': bb_num_std_dev,
-            'macd_fast': macd_fast,
-            'macd_slow': macd_slow,
-            'macd_signal': macd_signal
-        }
-    }
+    return result
 
 
 def main():
